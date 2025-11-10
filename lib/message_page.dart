@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
+
 class MessagePage extends StatefulWidget {
   final String userName;
   final String userId;
@@ -45,7 +46,7 @@ class _MessagePageState extends State<MessagePage> {
   bool isRecording = false;
   Timer? _recordingTimer;
   int _recordingDuration = 0;
-  final ImagePicker _imagePicker = ImagePicker();
+ // final ImagePicker _imagePicker = ImagePicker();
   late FlutterSoundRecorder _audioRecorder;
   String? _audioPath;
 
@@ -76,7 +77,6 @@ class _MessagePageState extends State<MessagePage> {
       await _audioRecorder.openRecorder();
       await _audioPlayer.openPlayer();
       
-      // 🔥 CORRIGÉ: Utiliser onProgress au lieu de onPlayerStateChanged
       _audioPlayer.onProgress!.listen((e) {
         if (mounted && _isPlaying) {
           setState(() {
@@ -195,12 +195,14 @@ class _MessagePageState extends State<MessagePage> {
     // Demander la permission
     final status = await Permission.microphone.request();
     if (status != PermissionStatus.granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Permission microphone requise'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permission microphone requise'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       return;
     }
     
@@ -228,12 +230,14 @@ class _MessagePageState extends State<MessagePage> {
       
     } catch (e) {
       print('Erreur enregistrement: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erreur lors de l\'enregistrement'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur lors de l\'enregistrement'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -259,79 +263,83 @@ class _MessagePageState extends State<MessagePage> {
     });
   }
 
-  /// 📸 Méthode pour sélectionner une image
+  /// 📸 MÉTHODE CORRIGÉE POUR SÉLECTIONNER UNE IMAGE
+  /// 🎯 SOLUTION DE CONTOURNEMENT - Méthode corrigée
+/// 🎯 MÉTHODE FILE_PICKER GARANTIE
 Future<void> _pickImage() async {
+  print('🚀 Ouverture de la galerie...');
+  
   try {
-    // Demander la permission d'accéder à la galerie
-    final status = await Permission.photos.request();
-    
-    if (status != PermissionStatus.granted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Permission requise pour accéder à la galerie'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+
+    if (image == null) {
+      print('ℹ️ Aucune image sélectionnée');
       return;
     }
 
-    final XFile? image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
+    String imagePath = image.path;
+    print('✅ IMAGE SÉLECTIONNÉE: $imagePath');
     
-    if (image != null && mounted) {
-      await _sendImageMessage(image.path);
-    }
-  } catch (e) {
-    print('Erreur sélection image: $e');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur lors de la sélection: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-}
-
- /// 📨 Envoyer un message image
-Future<void> _sendImageMessage(String imagePath) async {
-  try {
-    final String messageText = "📷 Image";
+    // Envoyer le message
+    await _sendImageMessage(imagePath);
     
-    await _dbHelper.insertMessage(widget.userId, messageText, sendAsMe);
-    
-    // Mettre à jour le dernier message
-    final now = DateTime.now();
-    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    await _dbHelper.updateLastMessage(widget.userId, messageText, time);
-    
-    await _loadMessages();
-    
+    // Confirmation
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('📷 Image envoyée'),
+          content: Text('📷 Image envoyée !'),
           backgroundColor: Colors.green,
         ),
       );
     }
+
   } catch (e) {
-    print('Erreur envoi image: $e');
+    print('💥 ERREUR: $e');
+    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erreur lors de l\'envoi de l\'image'),
+        SnackBar(
+          content: Text('Erreur: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
     }
   }
 }
+
+  /// 📨 Envoyer un message image
+  Future<void> _sendImageMessage(String imagePath) async {
+    try {
+      final String messageText = "📷 Image";
+      
+      // Sauvegarder aussi le chemin de l'image pour l'affichage futur
+      await _dbHelper.insertMessage(widget.userId, messageText, sendAsMe, audioPath: imagePath);
+      
+      // Mettre à jour le dernier message
+      final now = DateTime.now();
+      final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      await _dbHelper.updateLastMessage(widget.userId, messageText, time);
+      
+      await _loadMessages();
+      
+    } catch (e) {
+      print('Erreur envoi image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur lors de l\'envoi de l\'image'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   /// 🎵 Envoyer un message vocal
   Future<void> _sendVoiceMessage(int duration, String audioPath) async {
@@ -357,14 +365,13 @@ Future<void> _sendImageMessage(String imagePath) async {
     }
   }
 
-  /// 🔥 CORRIGÉ: Méthode pour lire un message vocal
+  /// Méthode pour lire un message vocal
   Future<void> _playVoiceMessage(int messageId, String messageText, String? audioPath) async {
     try {
       // Si un message est déjà en cours de lecture, l'arrêter
       if (_isPlaying) {
         await _stopPlayback();
         
-        // Si on clique sur le même message, on s'arrête là
         if (_currentlyPlayingMessageId == messageId) {
           return;
         }
@@ -389,7 +396,6 @@ Future<void> _sendImageMessage(String imagePath) async {
           codec: Codec.aacADTS,
         );
         
-        // 🔥 CORRIGÉ: Timer de secours pour la progression
         _startPlaybackTimer(duration);
         
       } else {
@@ -397,27 +403,20 @@ Future<void> _sendImageMessage(String imagePath) async {
         await _playTestSound(duration);
       }
 
-      // Afficher un message d'information
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🔊 Lecture du message vocal (${duration}s)'),
-          backgroundColor: Colors.blue,
-          duration: Duration(seconds: duration),
-        ),
-      );
-
     } catch (e) {
       print('Erreur lecture audio: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erreur lors de la lecture'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur lors de la lecture'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  /// 🔥 NOUVEAU: Timer de progression pour la lecture
+  /// Timer de progression pour la lecture
   void _startPlaybackTimer(int duration) {
     _playbackTimer?.cancel();
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
@@ -432,20 +431,16 @@ Future<void> _sendImageMessage(String imagePath) async {
     });
   }
 
-  /// 🔥 NOUVEAU: Méthode pour générer un son de test
+  /// Méthode pour générer un son de test
   Future<void> _playTestSound(int duration) async {
     try {
       _startPlaybackTimer(duration);
-      
-      // Simuler un son avec le vibreur (optionnel)
-      // HapticFeedback.mediumImpact();
-      
     } catch (e) {
       print('Erreur génération son test: $e');
     }
   }
 
-  /// 🔥 MÉTHODE POUR ARRÊTER LA LECTURE
+  /// MÉTHODE POUR ARRÊTER LA LECTURE
   Future<void> _stopPlayback() async {
     try {
       await _audioPlayer.stopPlayer();
@@ -609,51 +604,50 @@ Future<void> _sendImageMessage(String imagePath) async {
     final String? audioPath = msg['audioPath'];
     
     if (isImage) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 200,
-            height: 150,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[400]!),
+      final String? imagePath = audioPath; // On réutilise audioPath pour les images
+      
+      return GestureDetector(
+        onTap: () {
+          if (imagePath != null && File(imagePath).existsSync()) {
+            _showFullImage(imagePath);
+          }
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 200,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[400]!),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: imagePath != null && File(imagePath).existsSync()
+                    ? Image.file(
+                        File(imagePath),
+                        width: 200,
+                        height: 150,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildImagePlaceholder();
+                        },
+                      )
+                    : _buildImagePlaceholder(),
+              ),
             ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.photo, color: Colors.grey[600], size: 40),
-                      SizedBox(height: 8),
-                      Text(
-                        'Image',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.photo_library, color: Colors.white, size: 16),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 4),
+            Text(
+              'Image',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     
@@ -666,7 +660,7 @@ Future<void> _sendImageMessage(String imagePath) async {
       return GestureDetector(
         onTap: () => _playVoiceMessage(messageId, text, audioPath),
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isMe 
                 ? Colors.deepPurple.withOpacity(0.2)
@@ -686,7 +680,7 @@ Future<void> _sendImageMessage(String imagePath) async {
                 color: isMe ? Colors.deepPurple : Colors.blue,
                 size: 24,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               
               // Barre de progression
               if (isCurrentlyPlaying && _isPlaying) ...[
@@ -700,7 +694,7 @@ Future<void> _sendImageMessage(String imagePath) async {
                           isMe ? Colors.deepPurple : Colors.blue,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -723,10 +717,10 @@ Future<void> _sendImageMessage(String imagePath) async {
                     ],
                   ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
               ] else ...[
                 Icon(Icons.audiotrack, size: 20, color: isMe ? Colors.deepPurple : Colors.blue),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Text(
                   '$duration"s"',
                   style: TextStyle(
@@ -741,7 +735,7 @@ Future<void> _sendImageMessage(String imagePath) async {
               if (isCurrentlyPlaying && _isPlaying)
                 GestureDetector(
                   onTap: _stopPlayback,
-                  child: Icon(Icons.stop, color: Colors.red, size: 20),
+                  child: const Icon(Icons.stop, color: Colors.red, size: 20),
                 ),
             ],
           ),
@@ -755,6 +749,66 @@ Future<void> _sendImageMessage(String imagePath) async {
       style: TextStyle(
         color: isMe ? Colors.deepPurple[900] : Colors.black87,
         fontSize: 15,
+      ),
+    );
+  }
+
+  /// Méthode helper pour le placeholder d'image
+  Widget _buildImagePlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.photo, color: Colors.grey[600], size: 40),
+          const SizedBox(height: 8),
+          Text(
+            'Image',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Méthode pour afficher l'image en plein écran
+  void _showFullImage(String imagePath) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(imagePath),
+                  fit: BoxFit.contain,
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: CircleAvatar(
+                  backgroundColor: Colors.black54,
+                  radius: 16,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -892,431 +946,441 @@ Future<void> _sendImageMessage(String imagePath) async {
               ),
           ],
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.deepPurple),
-          onPressed: () => Navigator.pop(context),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: sendAsMe ? Colors.deepPurple.shade100 : Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Text(
-                sendAsMe ? 'MOI' : widget.userName.split(' ')[0].toUpperCase(),
-                style: TextStyle(
-                  color: sendAsMe ? Colors.deepPurple : Colors.orange.shade900,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+                 leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.deepPurple),
+            onPressed: () => Navigator.pop(context),
+          ),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          actions: [
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: sendAsMe ? Colors.deepPurple.shade100 : Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  sendAsMe ? 'MOI' : widget.userName.split(' ')[0].toUpperCase(),
+                  style: TextStyle(
+                    color: sendAsMe ? Colors.deepPurple : Colors.orange.shade900,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.swap_horiz, color: Colors.deepPurple),
-            tooltip: 'Changer d\'expéditeur',
-            onPressed: () {
-              setState(() {
-                sendAsMe = !sendAsMe;
-                isTyping = false;
-                otherUserIsTyping = false;
-              });
-              _typingTimer?.cancel();
-              _simulateTypingTimer?.cancel();
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(
-                        sendAsMe ? Icons.person : Icons.person_outline,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        sendAsMe 
-                            ? '💬 Vous envoyez maintenant' 
-                            : '💬 ${widget.userName} envoie maintenant',
-                      ),
-                    ],
-                  ),
-                  duration: const Duration(seconds: 2),
-                  backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
-                ),
-              );
-            },
-          ),
-        
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
-            onSelected: (value) async {
-              if (value == 'debug') {
-                print('\n🔍 === MESSAGE PAGE DEBUG ===');
-                print('User: ${widget.userName} (${widget.userId})');
-                print('Messages count: ${messages.length}');
-                print('Send mode: ${sendAsMe ? "MOI" : widget.userName}');
+            IconButton(
+              icon: const Icon(Icons.swap_horiz, color: Colors.deepPurple),
+              tooltip: 'Changer d\'expéditeur',
+              onPressed: () {
+                setState(() {
+                  sendAsMe = !sendAsMe;
+                  isTyping = false;
+                  otherUserIsTyping = false;
+                });
+                _typingTimer?.cancel();
+                _simulateTypingTimer?.cancel();
                 
-                await _dbHelper.printAllMessages();
-                await _dbHelper.printDatabaseStats();
-                
-                final path = await _dbHelper.getDatabasePath();
-                print('📍 Database: $path');
-                print('=========================\n');
-                
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Voir la console')),
-                  );
-                }
-              } else if (value == 'clear') {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Supprimer les messages?'),
-                    content: const Text('Tous les messages seront supprimés.'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Annuler'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          sendAsMe ? Icons.person : Icons.person_outline,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          sendAsMe 
+                              ? '💬 Vous envoyez maintenant' 
+                              : '💬 ${widget.userName} envoie maintenant',
+                        ),
+                      ],
+                    ),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
                   ),
                 );
-                
-                if (confirm == true) {
-                  await _dbHelper.deleteMessages(widget.userId);
-                  await _loadMessages();
+              },
+            ),
+          
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
+              onSelected: (value) async {
+                if (value == 'debug') {
+                  print('\n🔍 === MESSAGE PAGE DEBUG ===');
+                  print('User: ${widget.userName} (${widget.userId})');
+                  print('Messages count: ${messages.length}');
+                  print('Send mode: ${sendAsMe ? "MOI" : widget.userName}');
+                  
+                  await _dbHelper.printAllMessages();
+                  await _dbHelper.printDatabaseStats();
+                  
+                  final path = await _dbHelper.getDatabasePath();
+                  print('📍 Database: $path');
+                  print('=========================\n');
                   
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Messages supprimés')),
+                      const SnackBar(content: Text('Voir la console')),
                     );
                   }
+                } else if (value == 'clear') {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Supprimer les messages?'),
+                      content: const Text('Tous les messages seront supprimés.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Annuler'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                  
+                  if (confirm == true) {
+                    await _dbHelper.deleteMessages(widget.userId);
+                    await _loadMessages();
+                    
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Messages supprimés')),
+                      );
+                    }
+                  }
                 }
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'debug',
-                child: Row(
-                  children: [
-                    Icon(Icons.bug_report, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Debug'),
-                  ],
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'debug',
+                  child: Row(
+                    children: [
+                      Icon(Icons.bug_report, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Debug'),
+                    ],
+                  ),
                 ),
-              ),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Text('Supprimer tout'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: Colors.grey[300],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          "Aucun message",
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          "Commencez la conversation avec ${widget.userName}",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _simulateReceivedMessage,
-                              icon: const Icon(Icons.mail),
-                              label: const Text('Simuler message'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(10),
-                    itemCount: messages.length + (otherUserIsTyping && !sendAsMe ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == messages.length && otherUserIsTyping && !sendAsMe) {
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 5),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: _TypingIndicator(),
-                          ),
-                        );
-                      }
-
-                      final msg = messages[index];
-                      return _buildMessageBubble(msg);
-                    },
+                const PopupMenuItem(
+                  value: 'clear',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('Supprimer tout'),
+                    ],
                   ),
-          ),
-          
-          if (otherUserIsTyping && !sendAsMe)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                border: Border(
-                  top: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: Colors.orange,
-                    child: Text(
-                      widget.userName[0],
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${widget.userName} est en train d\'écrire',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _TypingIndicator(),
-                ],
-              ),
-            ),
-          
-          const Divider(height: 1),
-          
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                if (isRecording)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.mic, color: Colors.red, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Enregistrement... $_recordingDuration"s"',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: _stopRecording,
-                          child: Icon(Icons.stop, color: Colors.red, size: 24),
-                        ),
-                      ],
-                    ),
-                  ),
-                
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.photo_library, color: Colors.deepPurple),
-                      tooltip: 'Envoyer une image',
-                      onPressed: _pickImage,
-                    ),
-                    
-                    IconButton(
-                      icon: Icon(
-                        isRecording ? Icons.stop : Icons.mic,
-                        color: isRecording ? Colors.red : Colors.deepPurple,
-                      ),
-                      tooltip: isRecording ? 'Arrêter l\'enregistrement' : 'Message vocal',
-                      onPressed: isRecording ? _stopRecording : _startRecording,
-                    ),
-                    
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        decoration: InputDecoration(
-                          hintText: sendAsMe 
-                              ? "Tapez votre message..."
-                              : "Message de ${widget.userName}...",
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide(
-                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide(
-                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                              width: 2,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        onSubmitted: (_) => _sendMessage(),
-                        textCapitalization: TextCapitalization.sentences,
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 8),
-                    
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
-                      child: IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                        onPressed: _sendMessage,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: messages.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 64,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            "Aucun message",
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Commencez la conversation avec ${widget.userName}",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: _simulateReceivedMessage,
+                                icon: const Icon(Icons.mail),
+                                label: const Text('Simuler message'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              ElevatedButton.icon(
+                                onPressed: _pickImage,
+                                icon: const Icon(Icons.photo),
+                                label: const Text('Test image'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(10),
+                      itemCount: messages.length + (otherUserIsTyping && !sendAsMe ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == messages.length && otherUserIsTyping && !sendAsMe) {
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 5),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: _TypingIndicator(),
+                            ),
+                          );
+                        }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inDays == 0) {
-      final hour = timestamp.hour.toString().padLeft(2, '0');
-      final minute = timestamp.minute.toString().padLeft(2, '0');
-      return '$hour:$minute';
-    } else if (difference.inDays == 1) {
-      return 'Hier';
-    } else {
-      final day = timestamp.day.toString().padLeft(2, '0');
-      final month = timestamp.month.toString().padLeft(2, '0');
-      return '$day/$month';
-    }
-  }
-}
-
-class _TypingIndicator extends StatefulWidget {
-  @override
-  State<_TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<_TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1400),
-      vsync: this,
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (index) {
-            final delay = index * 0.2;
-            final value = (_controller.value - delay).clamp(0.0, 1.0);
-            final opacity = (value * 2).clamp(0.0, 1.0);
+                        final msg = messages[index];
+                        return _buildMessageBubble(msg);
+                      },
+                    ),
+            ),
             
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              child: Opacity(
-                opacity: opacity > 0.5 ? 1.0 - (opacity - 0.5) * 2 : opacity * 2,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[600],
-                    shape: BoxShape.circle,
+            if (otherUserIsTyping && !sendAsMe)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  border: Border(
+                    top: BorderSide(color: Colors.grey[300]!),
                   ),
                 ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: Colors.orange,
+                      child: Text(
+                        widget.userName[0],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${widget.userName} est en train d\'écrire',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _TypingIndicator(),
+                  ],
+                ),
               ),
-            );
-          }),
-        );
-      },
-    );
+            
+            const Divider(height: 1),
+            
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                children: [
+                  if (isRecording)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.mic, color: Colors.red, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Enregistrement... $_recordingDuration"s"',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _stopRecording,
+                            child: const Icon(Icons.stop, color: Colors.red, size: 24),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.photo_library, color: Colors.deepPurple),
+                        tooltip: 'Envoyer une image',
+                        onPressed: _pickImage,
+                      ),
+                      
+                      IconButton(
+                        icon: Icon(
+                          isRecording ? Icons.stop : Icons.mic,
+                          color: isRecording ? Colors.red : Colors.deepPurple,
+                        ),
+                        tooltip: isRecording ? 'Arrêter l\'enregistrement' : 'Message vocal',
+                        onPressed: isRecording ? _stopRecording : _startRecording,
+                      ),
+                      
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          decoration: InputDecoration(
+                            hintText: sendAsMe 
+                                ? "Tapez votre message..."
+                                : "Message de ${widget.userName}...",
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(25),
+                              borderSide: BorderSide(
+                                color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(25),
+                              borderSide: BorderSide(
+                                color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                          ),
+                          onSubmitted: (_) => _sendMessage(),
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 8),
+                      
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                          onPressed: _sendMessage,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    String _formatTimestamp(DateTime timestamp) {
+      final now = DateTime.now();
+      final difference = now.difference(timestamp);
+
+      if (difference.inDays == 0) {
+        final hour = timestamp.hour.toString().padLeft(2, '0');
+        final minute = timestamp.minute.toString().padLeft(2, '0');
+        return '$hour:$minute';
+      } else if (difference.inDays == 1) {
+        return 'Hier';
+      } else {
+        final day = timestamp.day.toString().padLeft(2, '0');
+        final month = timestamp.month.toString().padLeft(2, '0');
+        return '$day/$month';
+      }
+    }
   }
-}
+
+  class _TypingIndicator extends StatefulWidget {
+    @override
+    State<_TypingIndicator> createState() => _TypingIndicatorState();
+  }
+
+  class _TypingIndicatorState extends State<_TypingIndicator>
+      with SingleTickerProviderStateMixin {
+    late AnimationController _controller;
+
+    @override
+    void initState() {
+      super.initState();
+      _controller = AnimationController(
+        duration: const Duration(milliseconds: 1400),
+        vsync: this,
+      )..repeat();
+    }
+
+    @override
+    void dispose() {
+      _controller.dispose();
+      super.dispose();
+    }
+
+    @override
+    Widget build(BuildContext context) {
+      return AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (index) {
+              final delay = index * 0.2;
+              final value = (_controller.value - delay).clamp(0.0, 1.0);
+              final opacity = (value * 2).clamp(0.0, 1.0);
+              
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                child: Opacity(
+                  opacity: opacity > 0.5 ? 1.0 - (opacity - 0.5) * 2 : opacity * 2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[600],
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          );
+        },
+      );
+    }
+  }
