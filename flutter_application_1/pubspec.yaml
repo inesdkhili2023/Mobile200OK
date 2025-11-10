@@ -92,5 +92,4 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
   assets:
-    - assets/images/login.png
-    - assets/images/opt.png
+    - assets/images/
