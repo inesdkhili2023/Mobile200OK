@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // 🔥 Version augmentée à 2
       onCreate: (db, version) async {
         // Table des conversations
         await db.execute('''
@@ -43,9 +43,28 @@ class DatabaseHelper {
             isMe INTEGER,
             timestamp TEXT,
             isRead INTEGER DEFAULT 0
-
           )
         ''');
+        print('✅ Database created with isRead column');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // 🔥 Ajout de la colonne isRead si mise à jour depuis version 1
+        if (oldVersion < 2) {
+          try {
+            // Vérifier si la colonne isRead existe déjà
+            final columns = await db.rawQuery('PRAGMA table_info(messages)');
+            bool hasIsRead = columns.any((col) => col['name'] == 'isRead');
+            
+            if (!hasIsRead) {
+              await db.execute('ALTER TABLE messages ADD COLUMN isRead INTEGER DEFAULT 0');
+              print('✅ Colonne isRead ajoutée à la table messages');
+            } else {
+              print('✅ Colonne isRead existe déjà');
+            }
+          } catch (e) {
+            print('❌ Erreur lors de la mise à jour: $e');
+          }
+        }
       },
     );
   }
@@ -62,7 +81,9 @@ class DatabaseHelper {
       'text': text,
       'isMe': isMe ? 1 : 0,
       'timestamp': DateTime.now().toIso8601String(),
+      'isRead': isMe ? 1 : 0, // 🔥 Les messages envoyés sont marqués comme lus
     });
+    print('✅ Message inséré pour $userId: "$text" (isMe: $isMe)');
   }
 
   /// Récupérer les messages pour un utilisateur
@@ -79,41 +100,70 @@ class DatabaseHelper {
     return List<Map<String, dynamic>>.from(result);
   }
 
+  /// Modifier un message
+  Future<void> updateMessage(int messageId, String newText) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      {
+        'text': newText,
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    print('✅ Message $messageId modifié: "$newText"');
+  }
+
+  /// Supprimer un message spécifique
+  Future<void> deleteMessage(int messageId) async {
+    final db = await database;
+    await db.delete(
+      'messages',
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    print('✅ Message $messageId supprimé');
+  }
+
   /// Supprimer les messages d'un utilisateur
   Future<void> deleteMessages(String userId) async {
     final db = await database;
-    await db.delete(
+    final count = await db.delete(
       'messages',
       where: 'userId = ?',
       whereArgs: [userId],
     );
+    print('✅ $count messages supprimés pour l\'utilisateur $userId');
   }
 
   /// Supprimer tous les messages
   Future<void> clearAllMessages() async {
     final db = await database;
-    await db.delete('messages');
-    print('🗑️ All messages cleared!');
+    final count = await db.delete('messages');
+    print('🗑️ $count messages supprimés de la base de données');
   }
 
-  /// 🆕 Compter les messages non lus pour un utilisateur
+  /// 🔥 CORRECTION: Compter les messages non lus pour un utilisateur
   Future<int> getUnreadCount(String userId) async {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT COUNT(*) as count 
       FROM messages 
-      WHERE userId = ? AND isMe = 0
+      WHERE userId = ? AND isMe = 0 AND (isRead = 0 OR isRead IS NULL)
     ''', [userId]);
     
-    return Sqflite.firstIntValue(result) ?? 0;
+    final count = Sqflite.firstIntValue(result) ?? 0;
+    print('🔍 Unread count for $userId: $count');
+    return count;
   }
 
-  /// 🆕 Récupérer tous les messages non lus pour un utilisateur
+  /// Récupérer tous les messages non lus pour un utilisateur
   Future<List<Map<String, dynamic>>> getUnreadMessages(String userId) async {
     final db = await database;
     final result = await db.query(
       'messages',
-      where: 'userId = ? AND isMe = 0',
+      where: 'userId = ? AND isMe = 0 AND (isRead = 0 OR isRead IS NULL)',
       whereArgs: [userId],
       orderBy: 'timestamp DESC',
     );
@@ -121,33 +171,41 @@ class DatabaseHelper {
     return List<Map<String, dynamic>>.from(result);
   }
 
-  /// 🆕 Récupérer tous les utilisateurs avec des messages non lus
+  /// Récupérer tous les utilisateurs avec des messages non lus
   Future<List<String>> getUsersWithUnreadMessages() async {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT DISTINCT userId 
       FROM messages 
-      WHERE isMe = 0
+      WHERE isMe = 0 AND (isRead = 0 OR isRead IS NULL)
     ''');
     
     return result.map((row) => row['userId'] as String).toList();
   }
 
-  /// 🆕 Marquer tous les messages comme lus pour un utilisateur
-  /// NOTE: On ne modifie PAS isMe, on compte juste qu'on les a vus
-  /// Pour implémenter un vrai système de "lu/non-lu", il faudrait une colonne 'isRead'
- Future<void> markMessagesAsRead(String userId) async {
-  final db = await database;
-  await db.update(
-    'messages',
-    {'isRead': 1},
-    where: 'userId = ? AND isMe = 0', // Seulement les messages reçus
-    whereArgs: [userId],
-  );
-}
+  /// 🔥 CORRECTION: Marquer tous les messages comme lus pour un utilisateur
+  Future<void> markMessagesAsRead(String userId) async {
+    final db = await database;
+    
+    // D'abord, compter combien de messages seront mis à jour
+    final beforeCount = await getUnreadCount(userId);
+    
+    // Marquer comme lus
+    final result = await db.update(
+      'messages',
+      {'isRead': 1},
+      where: 'userId = ? AND isMe = 0 AND (isRead = 0 OR isRead IS NULL)',
+      whereArgs: [userId],
+    );
+    
+    // Vérifier après
+    final afterCount = await getUnreadCount(userId);
+    
+    print('✅ $result messages marqués comme lus pour $userId');
+    print('🔍 Avant: $beforeCount non lus, Après: $afterCount non lus');
+  }
 
-
-  /// 🆕 Obtenir le dernier message d'un utilisateur
+  /// Obtenir le dernier message d'un utilisateur
   Future<Map<String, dynamic>?> getLastMessage(String userId) async {
     final db = await database;
     final result = await db.query(
@@ -173,6 +231,7 @@ class DatabaseHelper {
       chat,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    print('✅ Chat mis à jour pour ${chat['name']}');
   }
 
   /// Récupérer tous les chats
@@ -194,9 +253,10 @@ class DatabaseHelper {
       where: 'userId = ?',
       whereArgs: [userId],
     );
+    print('✅ Dernier message mis à jour pour $userId: "$message"');
   }
 
-  /// 🆕 Récupérer un chat spécifique par userId
+  /// Récupérer un chat spécifique par userId
   Future<Map<String, dynamic>?> getChat(String userId) async {
     final db = await database;
     final result = await db.query(
@@ -209,7 +269,7 @@ class DatabaseHelper {
     return result.isNotEmpty ? result.first : null;
   }
 
-  /// 🆕 Supprimer un chat spécifique
+  /// Supprimer un chat spécifique
   Future<void> deleteChat(String userId) async {
     final db = await database;
     await db.delete(
@@ -224,8 +284,7 @@ class DatabaseHelper {
   // NOTIFICATION HELPERS
   // ═══════════════════════════════════════════════════════════
 
-  /// 🆕 Obtenir les informations pour les notifications
-  /// Retourne une map avec userId, userName, unreadCount, et derniers messages
+  /// Obtenir les informations pour les notifications
   Future<List<Map<String, dynamic>>> getNotificationData() async {
     final db = await database;
     
@@ -259,7 +318,7 @@ class DatabaseHelper {
     return notificationData;
   }
 
-  /// 🆕 Vérifier si un utilisateur a des messages non lus
+  /// Vérifier si un utilisateur a des messages non lus
   Future<bool> hasUnreadMessages(String userId) async {
     final count = await getUnreadCount(userId);
     return count > 0;
@@ -283,15 +342,17 @@ class DatabaseHelper {
     } else {
       for (var i = 0; i < messages.length; i++) {
         final msg = messages[i];
+        final isRead = msg['isRead'] == 1 ? 'LUE' : 'NON LUE';
         print('\nMessage #${i + 1}:');
         print('  ID: ${msg['id']}');
         print('  User ID: ${msg['userId']}');
         print('  Text: ${msg['text']}');
         print('  Is Me: ${msg['isMe'] == 1 ? 'Yes' : 'No'}');
+        print('  Status: $isRead');
         print('  Timestamp: ${msg['timestamp']}');
       }
     }
-    print('\n═══════════════════════════════════════\n');
+    print('═══════════════════════════════════════\n');
   }
 
   /// Afficher tous les chats dans la console
@@ -318,7 +379,7 @@ class DatabaseHelper {
     print('\n═══════════════════════════════════════\n');
   }
 
-  /// 🆕 Afficher les statistiques des messages non lus
+  /// Afficher les statistiques des messages non lus
   Future<void> printUnreadStats() async {
     final usersWithUnread = await getUsersWithUnreadMessages();
     
@@ -377,7 +438,7 @@ class DatabaseHelper {
     ) ?? 0;
     
     final unreadCount = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM messages WHERE isMe = 0')
+      await db.rawQuery('SELECT COUNT(*) FROM messages WHERE isMe = 0 AND (isRead = 0 OR isRead IS NULL)')
     ) ?? 0;
     
     final userCounts = await getMessageCountByUser();
@@ -450,7 +511,7 @@ class DatabaseHelper {
     };
   }
 
-  /// 🆕 Fermer la base de données proprement
+  /// Fermer la base de données proprement
   Future<void> close() async {
     if (_db != null) {
       await _db!.close();
@@ -458,4 +519,28 @@ class DatabaseHelper {
       print('🔒 Database closed');
     }
   }
+
+  /// 🔥 NOUVELLE MÉTHODE: Vérifier la structure de la base de données
+  Future<void> checkDatabaseStructure() async {
+    final db = await database;
+    
+    print('\n🔍 CHECKING DATABASE STRUCTURE');
+    
+    // Vérifier la table messages
+    final messageColumns = await db.rawQuery('PRAGMA table_info(messages)');
+    print('Messages table columns:');
+    for (var col in messageColumns) {
+      print('  - ${col['name']} (${col['type']})');
+    }
+    
+    // Vérifier la table chats
+    final chatColumns = await db.rawQuery('PRAGMA table_info(chats)');
+    print('Chats table columns:');
+    for (var col in chatColumns) {
+      print('  - ${col['name']} (${col['type']})');
+    }
+    
+    print('🔍 END OF STRUCTURE CHECK\n');
+  }
+
 }

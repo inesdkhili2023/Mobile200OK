@@ -26,6 +26,10 @@ class _MessagePageState extends State<MessagePage> {
   List<Map<String, dynamic>> messages = [];
   bool sendAsMe = true; // 🔥 Mode d'envoi (qui envoie actuellement)
   
+  // Editing state
+  int? _editingMessageId;
+  final TextEditingController _editController = TextEditingController();
+  
   // Typing indicator state
   bool isTyping = false;
   bool otherUserIsTyping = false;
@@ -48,6 +52,7 @@ class _MessagePageState extends State<MessagePage> {
   void dispose() {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _editController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
     _simulateTypingTimer?.cancel();
@@ -107,7 +112,6 @@ class _MessagePageState extends State<MessagePage> {
   _scrollToBottom();
 }
 
-
   Future<void> _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
 
@@ -131,6 +135,92 @@ class _MessagePageState extends State<MessagePage> {
 
     _controller.clear();
     await _loadMessages();
+  }
+
+  /// 🆕 Edit message
+  Future<void> _editMessage(int messageId, String currentText) async {
+    _editController.text = currentText;
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Modifier le message'),
+        content: TextField(
+          controller: _editController,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Modifier votre message...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (_editController.text.trim().isNotEmpty) {
+                Navigator.pop(context, _editController.text.trim());
+              }
+            },
+            child: const Text('Sauvegarder'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await _dbHelper.updateMessage(messageId, result);
+      await _loadMessages();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Message modifié'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+    
+    _editController.clear();
+  }
+
+  /// 🆕 Delete message
+  Future<void> _deleteMessage(int messageId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le message?'),
+        content: const Text('Cette action ne peut pas être annulée.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _dbHelper.deleteMessage(messageId);
+      await _loadMessages();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🗑️ Message supprimé'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   /// 🆕 Simuler la réception d'un message
@@ -320,12 +410,7 @@ class _MessagePageState extends State<MessagePage> {
               );
             },
           ),
-          // Bouton pour simuler un message reçu
-          IconButton(
-            icon: const Icon(Icons.mail, color: Colors.green),
-            tooltip: 'Simuler message reçu',
-            onPressed: _simulateReceivedMessage,
-          ),
+        
           // Menu avec options
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
@@ -477,6 +562,7 @@ class _MessagePageState extends State<MessagePage> {
                       final msg = messages[index];
                       final messageIsMe = msg['isMe'] == 1; // 🔥 Utiliser la valeur de la DB
                       final timestamp = DateTime.parse(msg['timestamp']);
+                      final messageId = msg['id'];
 
                       return Align(
                         alignment: messageIsMe
@@ -484,38 +570,99 @@ class _MessagePageState extends State<MessagePage> {
                             : Alignment.centerLeft,
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 5),
-                          padding: const EdgeInsets.all(12),
                           constraints: BoxConstraints(
                             maxWidth: MediaQuery.of(context).size.width * 0.7,
                           ),
-                          decoration: BoxDecoration(
-                            color: messageIsMe
-                                ? Colors.deepPurple.shade100
-                                : Colors.grey[300],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                msg['text'],
-                                style: TextStyle(
-                                  color: messageIsMe
-                                      ? Colors.deepPurple[900]
-                                      : Colors.black87,
-                                  fontSize: 15,
+                              if (!messageIsMe) 
+                                const SizedBox(width: 8),
+                              
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: messageIsMe
+                                        ? Colors.deepPurple.shade100
+                                        : Colors.grey[300],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        msg['text'],
+                                        style: TextStyle(
+                                          color: messageIsMe
+                                              ? Colors.deepPurple[900]
+                                              : Colors.black87,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _formatTimestamp(timestamp),
+                                            style: TextStyle(
+                                              color: messageIsMe
+                                                  ? Colors.deepPurple[700]
+                                                  : Colors.grey[600],
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                          if (messageIsMe) // Only show menu for my messages
+                                            PopupMenuButton<String>(
+                                              padding: EdgeInsets.zero,
+                                              icon: Icon(
+                                                Icons.more_vert,
+                                                size: 16,
+                                                color: messageIsMe
+                                                    ? Colors.deepPurple[700]
+                                                    : Colors.grey[600],
+                                              ),
+                                              onSelected: (value) async {
+                                                if (value == 'edit') {
+                                                  await _editMessage(messageId, msg['text']);
+                                                } else if (value == 'delete') {
+                                                  await _deleteMessage(messageId);
+                                                }
+                                              },
+                                              itemBuilder: (context) => [
+                                                const PopupMenuItem(
+                                                  value: 'edit',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.edit, size: 18, color: Colors.blue),
+                                                      SizedBox(width: 8),
+                                                      Text('Modifier'),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.delete, size: 18, color: Colors.red),
+                                                      SizedBox(width: 8),
+                                                      Text('Supprimer'),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatTimestamp(timestamp),
-                                style: TextStyle(
-                                  color: messageIsMe
-                                      ? Colors.deepPurple[700]
-                                      : Colors.grey[600],
-                                  fontSize: 10,
-                                ),
-                              ),
+                              
+                              if (messageIsMe) 
+                                const SizedBox(width: 8),
                             ],
                           ),
                         ),
@@ -693,4 +840,5 @@ class _TypingIndicatorState extends State<_TypingIndicator>
       },
     );
   }
+
 }

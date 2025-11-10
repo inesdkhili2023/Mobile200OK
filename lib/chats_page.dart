@@ -3,7 +3,6 @@ import 'message_page.dart';
 import 'database_helper.dart';
 import 'notification_service.dart';
 
-
 class ChatsPage extends StatefulWidget {
   const ChatsPage({super.key});
 
@@ -78,7 +77,6 @@ class _ChatsPageState extends State<ChatsPage> {
   }
 
   Future<void> _loadChatsWithLastMessages() async {
-    // Initialiser les chats dans la base de données si nécessaire
     await _initializeChatsInDatabase();
     
     List<Map<String, dynamic>> chats = [];
@@ -90,7 +88,9 @@ class _ChatsPageState extends State<ChatsPage> {
       // Get the last message
       String lastMessage = "Pas de messages";
       String time = "";
-      int unreadCount = 0;
+      
+      // 🔥 COMPTER SEULEMENT LES MESSAGES NON LUS (isRead = 0)
+      int unreadCount = messages.where((m) => m['isMe'] == 0 && (m['isRead'] == 0 || m['isRead'] == null)).length;
 
       if (messages.isNotEmpty) {
         final lastMsg = messages.last;
@@ -100,8 +100,6 @@ class _ChatsPageState extends State<ChatsPage> {
         final timestamp = DateTime.parse(lastMsg['timestamp']);
         time = _formatTime(timestamp);
         
-        // Count unread messages (messages where isMe = 0)
-        unreadCount = messages.where((m) => m['isMe'] == 0).length;
         // ⚡ Notification si messages non lus
         if (unreadCount > 0) {
           NotificationService().showNotification(
@@ -118,7 +116,7 @@ class _ChatsPageState extends State<ChatsPage> {
         "avatar": contact["avatar"],
         "message": lastMessage,
         "time": time,
-        "unreadCount": unreadCount,
+        "unreadCount": unreadCount, // 🔥 Maintenant seulement les non lus
         "hasMessages": messages.isNotEmpty,
       });
     }
@@ -134,6 +132,29 @@ class _ChatsPageState extends State<ChatsPage> {
       chatsWithLastMessages = chats;
       _filterChats();
     });
+  }
+
+  // 🔥 NOUVELLE MÉTHODE POUR MARQUER COMME LU VISUELLEMENT
+  void _markChatAsRead(String userId) async {
+    // Marquer comme lu dans la base
+    await _dbHelper.markMessagesAsRead(userId);
+    
+    // Mettre à jour l'état local immédiatement
+    if (mounted) {
+      setState(() {
+        // Mettre à jour dans chatsWithLastMessages
+        final index = chatsWithLastMessages.indexWhere((c) => c["id"] == userId);
+        if (index != -1) {
+          chatsWithLastMessages[index]["unreadCount"] = 0;
+        }
+        
+        // Mettre à jour dans filteredChats
+        final filteredIndex = filteredChats.indexWhere((c) => c["id"] == userId);
+        if (filteredIndex != -1) {
+          filteredChats[filteredIndex]["unreadCount"] = 0;
+        }
+      });
+    }
   }
 
   Future<void> _initializeChatsInDatabase() async {
@@ -378,6 +399,9 @@ class _ChatsPageState extends State<ChatsPage> {
                             
                             return InkWell(
                               onTap: () async {
+                                // 🔥 MARQUER COMME LU IMMÉDIATEMENT AU CLIC
+                                _markChatAsRead(chat["id"]!);
+                                
                                 await Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -388,8 +412,10 @@ class _ChatsPageState extends State<ChatsPage> {
                                   ),
                                 );
                                 
-                                // Refresh when coming back
-                                await _loadChatsWithLastMessages();
+                                // 🔥 RAFRAÎCHIR AU RETOUR POUR SYNCHRONISER
+                                if (mounted) {
+                                  await _loadChatsWithLastMessages();
+                                }
                               },
                               child: Dismissible(
                                 key: Key(chat["id"]!),
