@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 <!-- Permission pour Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Permissions pour accéder à la galerie -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Pour Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <application
         android:label="handicraft"
         android:name="${applicationName}"

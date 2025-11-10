@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'database_helper.dart';
 import 'notification_service.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class MessagePage extends StatefulWidget {
   final String userName;
@@ -24,7 +29,7 @@ class _MessagePageState extends State<MessagePage> {
   final ScrollController _scrollController = ScrollController();
 
   List<Map<String, dynamic>> messages = [];
-  bool sendAsMe = true; // 🔥 Mode d'envoi (qui envoie actuellement)
+  bool sendAsMe = true;
   
   // Editing state
   int? _editingMessageId;
@@ -36,16 +41,58 @@ class _MessagePageState extends State<MessagePage> {
   Timer? _typingTimer;
   Timer? _simulateTypingTimer;
 
+  // États pour médias
+  bool isRecording = false;
+  Timer? _recordingTimer;
+  int _recordingDuration = 0;
+  final ImagePicker _imagePicker = ImagePicker();
+  late FlutterSoundRecorder _audioRecorder;
+  String? _audioPath;
+
+  // États pour la lecture audio
+  late FlutterSoundPlayer _audioPlayer;
+  bool _isPlaying = false;
+  int? _currentlyPlayingMessageId;
+  double _playbackPosition = 0.0;
+  double _playbackDuration = 0.0;
+  Timer? _playbackTimer;
+
   @override
   void initState() {
     super.initState();
     _loadMessages();
     
-    // Écouter les changements dans le TextField
     _controller.addListener(_onTextChanged);
-    
-    // Annuler les notifications pour ce contact
     _notificationService.cancelNotification(widget.userId);
+
+    // Initialiser l'enregistreur ET le lecteur audio
+    _audioRecorder = FlutterSoundRecorder();
+    _audioPlayer = FlutterSoundPlayer();
+    _initAudio();
+  }
+
+  Future<void> _initAudio() async {
+    try {
+      await _audioRecorder.openRecorder();
+      await _audioPlayer.openPlayer();
+      
+      // 🔥 CORRIGÉ: Utiliser onProgress au lieu de onPlayerStateChanged
+      _audioPlayer.onProgress!.listen((e) {
+        if (mounted && _isPlaying) {
+          setState(() {
+            _playbackPosition = e.position.inSeconds.toDouble();
+          });
+          
+          // Arrêter automatiquement quand la lecture est terminée
+          if (e.position.inSeconds >= _playbackDuration) {
+            _stopPlayback();
+          }
+        }
+      });
+      
+    } catch (e) {
+      print('Erreur initialisation audio: $e');
+    }
   }
 
   @override
@@ -56,6 +103,13 @@ class _MessagePageState extends State<MessagePage> {
     _scrollController.dispose();
     _typingTimer?.cancel();
     _simulateTypingTimer?.cancel();
+    _recordingTimer?.cancel();
+    _playbackTimer?.cancel();
+    
+    // Fermer les ressources audio
+    _audioRecorder.closeRecorder();
+    _audioPlayer.closePlayer();
+    
     super.dispose();
   }
 
@@ -100,17 +154,17 @@ class _MessagePageState extends State<MessagePage> {
     }
   }
 
- Future<void> _loadMessages() async {
-  final data = await _dbHelper.getMessages(widget.userId);
-  setState(() {
-    messages = List<Map<String, dynamic>>.from(data);
-  });
-  
-  // Marquer les messages non lus comme lus si on regarde la conversation
-  await _dbHelper.markMessagesAsRead(widget.userId);
-  
-  _scrollToBottom();
-}
+  Future<void> _loadMessages() async {
+    final data = await _dbHelper.getMessages(widget.userId);
+    setState(() {
+      messages = List<Map<String, dynamic>>.from(data);
+    });
+    
+    // Marquer les messages non lus comme lus si on regarde la conversation
+    await _dbHelper.markMessagesAsRead(widget.userId);
+    
+    _scrollToBottom();
+  }
 
   Future<void> _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
@@ -125,7 +179,6 @@ class _MessagePageState extends State<MessagePage> {
     _typingTimer?.cancel();
     _simulateTypingTimer?.cancel();
     
-    // 🔥 IMPORTANT: Utiliser sendAsMe pour déterminer qui envoie
     await _dbHelper.insertMessage(widget.userId, messageText, sendAsMe);
 
     // Mettre à jour le dernier message dans la table chats
@@ -135,6 +188,276 @@ class _MessagePageState extends State<MessagePage> {
 
     _controller.clear();
     await _loadMessages();
+  }
+
+  /// 🎤 Méthode pour démarrer l'enregistrement vocal
+  Future<void> _startRecording() async {
+    // Demander la permission
+    final status = await Permission.microphone.request();
+    if (status != PermissionStatus.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permission microphone requise'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    try {
+      // Créer le fichier audio
+      final directory = await getTemporaryDirectory();
+      _audioPath = '${directory.path}/audio_${DateTime.now().millisecondsSinceEpoch}.aac';
+      
+      await _audioRecorder.startRecorder(
+        toFile: _audioPath,
+        codec: Codec.aacADTS,
+      );
+      
+      setState(() {
+        isRecording = true;
+        _recordingDuration = 0;
+      });
+      
+      // Timer pour afficher la durée
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingDuration++;
+        });
+      });
+      
+    } catch (e) {
+      print('Erreur enregistrement: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erreur lors de l\'enregistrement'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// ⏹️ Méthode pour arrêter l'enregistrement
+  Future<void> _stopRecording() async {
+    _recordingTimer?.cancel();
+    
+    try {
+      await _audioRecorder.stopRecorder();
+      
+      if (_recordingDuration >= 1 && _audioPath != null) {
+        // Sauvegarder le fichier audio
+        await _sendVoiceMessage(_recordingDuration, _audioPath!);
+      }
+      
+    } catch (e) {
+      print('Erreur arrêt enregistrement: $e');
+    }
+    
+    setState(() {
+      isRecording = false;
+      _recordingDuration = 0;
+    });
+  }
+
+  /// 📸 Méthode pour sélectionner une image
+Future<void> _pickImage() async {
+  try {
+    // Demander la permission d'accéder à la galerie
+    final status = await Permission.photos.request();
+    
+    if (status != PermissionStatus.granted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permission requise pour accéder à la galerie'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final XFile? image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    
+    if (image != null && mounted) {
+      await _sendImageMessage(image.path);
+    }
+  } catch (e) {
+    print('Erreur sélection image: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur lors de la sélection: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+ /// 📨 Envoyer un message image
+Future<void> _sendImageMessage(String imagePath) async {
+  try {
+    final String messageText = "📷 Image";
+    
+    await _dbHelper.insertMessage(widget.userId, messageText, sendAsMe);
+    
+    // Mettre à jour le dernier message
+    final now = DateTime.now();
+    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    await _dbHelper.updateLastMessage(widget.userId, messageText, time);
+    
+    await _loadMessages();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📷 Image envoyée'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  } catch (e) {
+    print('Erreur envoi image: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erreur lors de l\'envoi de l\'image'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+  /// 🎵 Envoyer un message vocal
+  Future<void> _sendVoiceMessage(int duration, String audioPath) async {
+    final String messageText = "🎵 Message vocal (${duration}s)";
+    
+    // Sauvegarder le chemin du fichier audio dans la base de données
+    await _dbHelper.insertMessage(widget.userId, messageText, sendAsMe, audioPath: audioPath);
+    
+    // Mettre à jour le dernier message
+    final now = DateTime.now();
+    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    await _dbHelper.updateLastMessage(widget.userId, messageText, time);
+    
+    await _loadMessages();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎵 Message vocal envoyé (${duration}s)'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
+
+  /// 🔥 CORRIGÉ: Méthode pour lire un message vocal
+  Future<void> _playVoiceMessage(int messageId, String messageText, String? audioPath) async {
+    try {
+      // Si un message est déjà en cours de lecture, l'arrêter
+      if (_isPlaying) {
+        await _stopPlayback();
+        
+        // Si on clique sur le même message, on s'arrête là
+        if (_currentlyPlayingMessageId == messageId) {
+          return;
+        }
+      }
+
+      // Extraire la durée du message
+      final durationMatch = RegExp(r'\((\d+)s\)').firstMatch(messageText);
+      final duration = int.tryParse(durationMatch?.group(1) ?? '0') ?? 0;
+      
+      setState(() {
+        _isPlaying = true;
+        _currentlyPlayingMessageId = messageId;
+        _playbackDuration = duration.toDouble();
+        _playbackPosition = 0.0;
+      });
+
+      // Lire le vrai fichier audio si disponible
+      if (audioPath != null && await File(audioPath).exists()) {
+        print('🎵 Lecture du fichier audio: $audioPath');
+        await _audioPlayer.startPlayer(
+          fromURI: audioPath,
+          codec: Codec.aacADTS,
+        );
+        
+        // 🔥 CORRIGÉ: Timer de secours pour la progression
+        _startPlaybackTimer(duration);
+        
+      } else {
+        // Simulation si pas de fichier
+        await _playTestSound(duration);
+      }
+
+      // Afficher un message d'information
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🔊 Lecture du message vocal (${duration}s)'),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: duration),
+        ),
+      );
+
+    } catch (e) {
+      print('Erreur lecture audio: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erreur lors de la lecture'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// 🔥 NOUVEAU: Timer de progression pour la lecture
+  void _startPlaybackTimer(int duration) {
+    _playbackTimer?.cancel();
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (_playbackPosition >= _playbackDuration) {
+        timer.cancel();
+        _stopPlayback();
+      } else {
+        setState(() {
+          _playbackPosition += 0.1;
+        });
+      }
+    });
+  }
+
+  /// 🔥 NOUVEAU: Méthode pour générer un son de test
+  Future<void> _playTestSound(int duration) async {
+    try {
+      _startPlaybackTimer(duration);
+      
+      // Simuler un son avec le vibreur (optionnel)
+      // HapticFeedback.mediumImpact();
+      
+    } catch (e) {
+      print('Erreur génération son test: $e');
+    }
+  }
+
+  /// 🔥 MÉTHODE POUR ARRÊTER LA LECTURE
+  Future<void> _stopPlayback() async {
+    try {
+      await _audioPlayer.stopPlayer();
+      _playbackTimer?.cancel();
+      setState(() {
+        _isPlaying = false;
+        _currentlyPlayingMessageId = null;
+        _playbackPosition = 0.0;
+      });
+    } catch (e) {
+      print('Erreur arrêt lecture: $e');
+    }
   }
 
   /// 🆕 Edit message
@@ -240,7 +563,6 @@ class _MessagePageState extends State<MessagePage> {
 
     final randomMessage = (receivedMessages..shuffle()).first;
     
-    // 🔥 IMPORTANT: isMe = false pour les messages de l'autre personne
     await _dbHelper.insertMessage(widget.userId, randomMessage, false);
 
     // Mettre à jour le dernier message
@@ -263,45 +585,6 @@ class _MessagePageState extends State<MessagePage> {
     }
   }
 
-  /// 🆕 NOUVEAU: Réinitialiser la conversation avec des exemples
-  Future<void> _resetConversationWithExamples() async {
-    // Supprimer tous les messages existants
-    await _dbHelper.deleteMessages(widget.userId);
-    
-    // Créer une conversation exemple
-    await _dbHelper.insertMessage(widget.userId, 'Salut! Comment ça va?', false); // Autre
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, 'Ça va bien, merci! Et toi?', true); // Moi
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, 'Super! Tu es libre ce soir?', false); // Autre
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, 'Oui, on peut se voir!', true); // Moi
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, 'Parfait! À quelle heure?', false); // Autre
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, '19h ça te va?', true); // Moi
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    await _dbHelper.insertMessage(widget.userId, 'Parfait! À ce soir 👋', false); // Autre
-    
-    // Recharger
-    await _loadMessages();
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Conversation réinitialisée avec exemples!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       Future.delayed(const Duration(milliseconds: 100), () {
@@ -316,6 +599,267 @@ class _MessagePageState extends State<MessagePage> {
     }
   }
 
+  /// Méthode pour construire le contenu des messages multimédias
+  Widget _buildMessageContent(Map<String, dynamic> msg) {
+    final String text = msg['text'];
+    final bool isImage = text.contains("📷");
+    final bool isVoice = text.contains("🎵");
+    final int messageId = msg['id'];
+    final bool isMe = msg['isMe'] == 1;
+    final String? audioPath = msg['audioPath'];
+    
+    if (isImage) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 200,
+            height: 150,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[400]!),
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.photo, color: Colors.grey[600], size: 40),
+                      SizedBox(height: 8),
+                      Text(
+                        'Image',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.photo_library, color: Colors.white, size: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    
+    if (isVoice) {
+      // Extraire la durée du texte
+      final durationMatch = RegExp(r'\((\d+)s\)').firstMatch(text);
+      final duration = durationMatch?.group(1) ?? '0';
+      final bool isCurrentlyPlaying = _currentlyPlayingMessageId == messageId;
+      
+      return GestureDetector(
+        onTap: () => _playVoiceMessage(messageId, text, audioPath),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isMe 
+                ? Colors.deepPurple.withOpacity(0.2)
+                : Colors.grey.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isCurrentlyPlaying ? Colors.blue : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Bouton play/pause
+              Icon(
+                isCurrentlyPlaying && _isPlaying ? Icons.pause : Icons.play_arrow,
+                color: isMe ? Colors.deepPurple : Colors.blue,
+                size: 24,
+              ),
+              SizedBox(width: 8),
+              
+              // Barre de progression
+              if (isCurrentlyPlaying && _isPlaying) ...[
+                Expanded(
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: _playbackPosition / _playbackDuration,
+                        backgroundColor: Colors.grey[300],
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isMe ? Colors.deepPurple : Colors.blue,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${_playbackPosition.toStringAsFixed(1)}s',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          Text(
+                            '${_playbackDuration.toStringAsFixed(0)}s',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(width: 8),
+              ] else ...[
+                Icon(Icons.audiotrack, size: 20, color: isMe ? Colors.deepPurple : Colors.blue),
+                SizedBox(width: 8),
+                Text(
+                  '$duration"s"',
+                  style: TextStyle(
+                    color: isMe ? Colors.deepPurple : Colors.blue,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+              
+              // Bouton stop si en cours de lecture
+              if (isCurrentlyPlaying && _isPlaying)
+                GestureDetector(
+                  onTap: _stopPlayback,
+                  child: Icon(Icons.stop, color: Colors.red, size: 20),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // Message texte normal
+    return Text(
+      text,
+      style: TextStyle(
+        color: isMe ? Colors.deepPurple[900] : Colors.black87,
+        fontSize: 15,
+      ),
+    );
+  }
+
+  /// Méthode: Construire la bulle de message complète
+  Widget _buildMessageBubble(Map<String, dynamic> msg) {
+    final bool isMe = msg['isMe'] == 1;
+    final timestamp = DateTime.parse(msg['timestamp']);
+    final messageId = msg['id'];
+    final String text = msg['text'];
+    final bool isVoice = text.contains("🎵");
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isMe) const SizedBox(width: 8),
+            
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isMe
+                      ? Colors.deepPurple.shade100
+                      : Colors.grey[300],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildMessageContent(msg),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _formatTimestamp(timestamp),
+                          style: TextStyle(
+                            color: isMe
+                                ? Colors.deepPurple[700]
+                                : Colors.grey[600],
+                            fontSize: 10,
+                          ),
+                        ),
+                        if (isMe && !isVoice)
+                          PopupMenuButton<String>(
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              Icons.more_vert,
+                              size: 16,
+                              color: isMe
+                                  ? Colors.deepPurple[700]
+                                  : Colors.grey[600],
+                            ),
+                            onSelected: (value) async {
+                              if (value == 'edit') {
+                                await _editMessage(messageId, msg['text']);
+                              } else if (value == 'delete') {
+                                await _deleteMessage(messageId);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit, size: 18, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text('Modifier'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete, size: 18, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text('Supprimer'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            if (isMe) const SizedBox(width: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -328,7 +872,6 @@ class _MessagePageState extends State<MessagePage> {
               widget.userName,
               style: const TextStyle(color: Colors.deepPurple, fontSize: 18),
             ),
-            // Typing indicator dans l'AppBar
             if (otherUserIsTyping && !sendAsMe)
               const Text(
                 'est en train d\'écrire...',
@@ -356,7 +899,6 @@ class _MessagePageState extends State<MessagePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // Indicateur du mode actuel
           Container(
             margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -375,7 +917,6 @@ class _MessagePageState extends State<MessagePage> {
               ),
             ),
           ),
-          // Switch user button
           IconButton(
             icon: const Icon(Icons.swap_horiz, color: Colors.deepPurple),
             tooltip: 'Changer d\'expéditeur',
@@ -411,7 +952,6 @@ class _MessagePageState extends State<MessagePage> {
             },
           ),
         
-          // Menu avec options
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
             onSelected: (value) async {
@@ -543,7 +1083,6 @@ class _MessagePageState extends State<MessagePage> {
                     padding: const EdgeInsets.all(10),
                     itemCount: messages.length + (otherUserIsTyping && !sendAsMe ? 1 : 0),
                     itemBuilder: (context, index) {
-                      // Typing indicator bubble
                       if (index == messages.length && otherUserIsTyping && !sendAsMe) {
                         return Align(
                           alignment: Alignment.centerLeft,
@@ -560,118 +1099,11 @@ class _MessagePageState extends State<MessagePage> {
                       }
 
                       final msg = messages[index];
-                      final messageIsMe = msg['isMe'] == 1; // 🔥 Utiliser la valeur de la DB
-                      final timestamp = DateTime.parse(msg['timestamp']);
-                      final messageId = msg['id'];
-
-                      return Align(
-                        alignment: messageIsMe
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.7,
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!messageIsMe) 
-                                const SizedBox(width: 8),
-                              
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: messageIsMe
-                                        ? Colors.deepPurple.shade100
-                                        : Colors.grey[300],
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        msg['text'],
-                                        style: TextStyle(
-                                          color: messageIsMe
-                                              ? Colors.deepPurple[900]
-                                              : Colors.black87,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            _formatTimestamp(timestamp),
-                                            style: TextStyle(
-                                              color: messageIsMe
-                                                  ? Colors.deepPurple[700]
-                                                  : Colors.grey[600],
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                          if (messageIsMe) // Only show menu for my messages
-                                            PopupMenuButton<String>(
-                                              padding: EdgeInsets.zero,
-                                              icon: Icon(
-                                                Icons.more_vert,
-                                                size: 16,
-                                                color: messageIsMe
-                                                    ? Colors.deepPurple[700]
-                                                    : Colors.grey[600],
-                                              ),
-                                              onSelected: (value) async {
-                                                if (value == 'edit') {
-                                                  await _editMessage(messageId, msg['text']);
-                                                } else if (value == 'delete') {
-                                                  await _deleteMessage(messageId);
-                                                }
-                                              },
-                                              itemBuilder: (context) => [
-                                                const PopupMenuItem(
-                                                  value: 'edit',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(Icons.edit, size: 18, color: Colors.blue),
-                                                      SizedBox(width: 8),
-                                                      Text('Modifier'),
-                                                    ],
-                                                  ),
-                                                ),
-                                                const PopupMenuItem(
-                                                  value: 'delete',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(Icons.delete, size: 18, color: Colors.red),
-                                                      SizedBox(width: 8),
-                                                      Text('Supprimer'),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              
-                              if (messageIsMe) 
-                                const SizedBox(width: 8),
-                            ],
-                          ),
-                        ),
-                      );
+                      return _buildMessageBubble(msg);
                     },
                   ),
           ),
           
-          // Typing indicator bar
           if (otherUserIsTyping && !sendAsMe)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -712,51 +1144,99 @@ class _MessagePageState extends State<MessagePage> {
           
           const Divider(height: 1),
           
-          // Input area
           Container(
             color: Colors.white,
             padding: const EdgeInsets.all(8.0),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: sendAsMe 
-                          ? "Tapez votre message..."
-                          : "Message de ${widget.userName}...",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide(
-                          color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(25),
-                        borderSide: BorderSide(
-                          color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                          width: 2,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
+                if (isRecording)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    onSubmitted: (_) => _sendMessage(),
-                    textCapitalization: TextCapitalization.sentences,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.mic, color: Colors.red, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Enregistrement... $_recordingDuration"s"',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: _stopRecording,
+                          child: Icon(Icons.stop, color: Colors.red, size: 24),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                    onPressed: _sendMessage,
-                  ),
+                
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.photo_library, color: Colors.deepPurple),
+                      tooltip: 'Envoyer une image',
+                      onPressed: _pickImage,
+                    ),
+                    
+                    IconButton(
+                      icon: Icon(
+                        isRecording ? Icons.stop : Icons.mic,
+                        color: isRecording ? Colors.red : Colors.deepPurple,
+                      ),
+                      tooltip: isRecording ? 'Arrêter l\'enregistrement' : 'Message vocal',
+                      onPressed: isRecording ? _stopRecording : _startRecording,
+                    ),
+                    
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        decoration: InputDecoration(
+                          hintText: sendAsMe 
+                              ? "Tapez votre message..."
+                              : "Message de ${widget.userName}...",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(25),
+                            borderSide: BorderSide(
+                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(25),
+                            borderSide: BorderSide(
+                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                        textCapitalization: TextCapitalization.sentences,
+                      ),
+                    ),
+                    
+                    const SizedBox(width: 8),
+                    
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
+                      child: IconButton(
+                        icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                        onPressed: _sendMessage,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -784,7 +1264,6 @@ class _MessagePageState extends State<MessagePage> {
   }
 }
 
-/// Widget pour l'animation des points "..."
 class _TypingIndicator extends StatefulWidget {
   @override
   State<_TypingIndicator> createState() => _TypingIndicatorState();
@@ -840,5 +1319,4 @@ class _TypingIndicatorState extends State<_TypingIndicator>
       },
     );
   }
-
 }

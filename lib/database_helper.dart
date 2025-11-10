@@ -20,53 +20,78 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2, // 🔥 Version augmentée à 2
-      onCreate: (db, version) async {
-        // Table des conversations
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS chats(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            userId TEXT,
-            name TEXT,
-            message TEXT,
-            time TEXT,
-            avatar TEXT
-          )
-        ''');
-
-        // Table des messages
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS messages(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            userId TEXT,
-            text TEXT,
-            isMe INTEGER,
-            timestamp TEXT,
-            isRead INTEGER DEFAULT 0
-          )
-        ''');
-        print('✅ Database created with isRead column');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        // 🔥 Ajout de la colonne isRead si mise à jour depuis version 1
-        if (oldVersion < 2) {
-          try {
-            // Vérifier si la colonne isRead existe déjà
-            final columns = await db.rawQuery('PRAGMA table_info(messages)');
-            bool hasIsRead = columns.any((col) => col['name'] == 'isRead');
-            
-            if (!hasIsRead) {
-              await db.execute('ALTER TABLE messages ADD COLUMN isRead INTEGER DEFAULT 0');
-              print('✅ Colonne isRead ajoutée à la table messages');
-            } else {
-              print('✅ Colonne isRead existe déjà');
-            }
-          } catch (e) {
-            print('❌ Erreur lors de la mise à jour: $e');
-          }
-        }
-      },
+      version: 3, // 🔥 Version augmentée à 3 pour audioPath
+      onCreate: _createDatabase,
+      onUpgrade: _upgradeDatabase, // 🔥 Ajout de la méthode de migration
     );
+  }
+
+  // 🔥 EXTRACT: Méthode de création séparée
+  Future<void> _createDatabase(Database db, int version) async {
+    // Table des conversations
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS chats(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        name TEXT,
+        message TEXT,
+        time TEXT,
+        avatar TEXT
+      )
+    ''');
+
+    // Table des messages
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS messages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        text TEXT,
+        isMe INTEGER,
+        timestamp TEXT,
+        isRead INTEGER DEFAULT 0,
+        audioPath TEXT
+      )
+    ''');
+    print('✅ Database created with audioPath column');
+  }
+
+  // 🔥 NOUVELLE MÉTHODE: Migration de la base de données
+  Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
+    print('🔄 Migration de la base: v$oldVersion -> v$newVersion');
+    
+    if (oldVersion < 2) {
+      try {
+        // Vérifier si la colonne isRead existe déjà
+        final columns = await db.rawQuery('PRAGMA table_info(messages)');
+        bool hasIsRead = columns.any((col) => col['name'] == 'isRead');
+        
+        if (!hasIsRead) {
+          await db.execute('ALTER TABLE messages ADD COLUMN isRead INTEGER DEFAULT 0');
+          print('✅ Colonne isRead ajoutée à la table messages');
+        } else {
+          print('✅ Colonne isRead existe déjà');
+        }
+      } catch (e) {
+        print('❌ Erreur lors de l\'ajout de isRead: $e');
+      }
+    }
+    
+    if (oldVersion < 3) {
+      try {
+        // Vérifier si la colonne audioPath existe déjà
+        final columns = await db.rawQuery('PRAGMA table_info(messages)');
+        bool hasAudioPath = columns.any((col) => col['name'] == 'audioPath');
+        
+        if (!hasAudioPath) {
+          await db.execute('ALTER TABLE messages ADD COLUMN audioPath TEXT');
+          print('✅ Colonne audioPath ajoutée à la table messages');
+        } else {
+          print('✅ Colonne audioPath existe déjà');
+        }
+      } catch (e) {
+        print('❌ Erreur lors de l\'ajout de audioPath: $e');
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -74,16 +99,36 @@ class DatabaseHelper {
   // ═══════════════════════════════════════════════════════════
 
   /// Insérer un message
-  Future<void> insertMessage(String userId, String text, bool isMe) async {
+  Future<void> insertMessage(String userId, String text, bool isMe, {String? audioPath}) async {
     final db = await database;
-    await db.insert('messages', {
-      'userId': userId,
-      'text': text,
-      'isMe': isMe ? 1 : 0,
-      'timestamp': DateTime.now().toIso8601String(),
-      'isRead': isMe ? 1 : 0, // 🔥 Les messages envoyés sont marqués comme lus
-    });
-    print('✅ Message inséré pour $userId: "$text" (isMe: $isMe)');
+    
+    try {
+      await db.insert('messages', {
+        'userId': userId,
+        'text': text,
+        'isMe': isMe ? 1 : 0,
+        'timestamp': DateTime.now().toIso8601String(),
+        'isRead': isMe ? 1 : 0,
+        'audioPath': audioPath,
+      });
+      print('✅ Message inséré pour $userId: "$text" (isMe: $isMe, audioPath: $audioPath)');
+    } catch (e) {
+      print('❌ Erreur insertion message: $e');
+      // 🔥 FALLBACK: Réessayer sans audioPath si erreur
+      try {
+        await db.insert('messages', {
+          'userId': userId,
+          'text': text,
+          'isMe': isMe ? 1 : 0,
+          'timestamp': DateTime.now().toIso8601String(),
+          'isRead': isMe ? 1 : 0,
+        });
+        print('✅ Message inséré (sans audioPath) pour $userId: "$text"');
+      } catch (e2) {
+        print('❌ Erreur critique insertion message: $e2');
+        rethrow;
+      }
+    }
   }
 
   /// Récupérer les messages pour un utilisateur
@@ -350,6 +395,7 @@ class DatabaseHelper {
         print('  Is Me: ${msg['isMe'] == 1 ? 'Yes' : 'No'}');
         print('  Status: $isRead');
         print('  Timestamp: ${msg['timestamp']}');
+        print('  Audio Path: ${msg['audioPath'] ?? 'null'}');
       }
     }
     print('═══════════════════════════════════════\n');
@@ -542,5 +588,4 @@ class DatabaseHelper {
     
     print('🔍 END OF STRUCTURE CHECK\n');
   }
-
 }
