@@ -38,7 +38,7 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
-        // Show loading while checking auth state
+
         if (authProvider.isLoading) {
           return const Scaffold(
             body: Center(
@@ -47,7 +47,6 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // If user is logged in, show home page, otherwise show welcome page
         if (authProvider.isLoggedIn) {
           return const Home();
         } else {
@@ -81,7 +80,7 @@ class HelloPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // App Icon/Logo
+
                 Container(
                   width: 120,
                   height: 120,
@@ -98,11 +97,11 @@ class HelloPage extends StatelessWidget {
                 
                 const SizedBox(height: 40),
                 
-                // Welcome Text
+
                 const Text(
-                  'Hello!',
+                  'Welcome to HandiCraft !',
                   style: TextStyle(
-                    fontSize: 48,
+                    fontSize: 30,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -110,9 +109,8 @@ class HelloPage extends StatelessWidget {
                 
                 const SizedBox(height: 16),
                 
-                // Subtitle
+
                 const Text(
-                  'Welcome to our amazing app. '
                   'Let\'s get started on your journey!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -124,7 +122,7 @@ class HelloPage extends StatelessWidget {
                 
                 const SizedBox(height: 60),
                 
-                // Get Started Button
+
                 ElevatedButton(
                   onPressed: () {
                     Navigator.push(

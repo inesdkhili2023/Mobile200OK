@@ -45,7 +45,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       final emailSent = result['emailSent'] == true;
       
       if (emailSent) {
-        // Email sent successfully
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Verification code sent to your email!'),
@@ -54,7 +54,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
         );
         
-        // Navigate to verification page
+
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -62,7 +62,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
         );
       } else if (!emailService.isConfigured()) {
-        // EmailJS not configured - show code in dialog for testing
+
         final code = result['code'] as String;
         showDialog(
           context: context,
@@ -117,7 +117,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
         );
       } else {
-        // EmailJS configured but failed to send
+
         final code = result['code'] as String;
         final error = result['error'] as String?;
         
@@ -175,7 +175,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         );
       }
     } else {
-      // Error occurred
+
       final error = result['error'] as String?;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -200,7 +200,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               children: [
                 const SizedBox(height: 40),
                 
-                // Back button
+
                 IconButton(
                   onPressed: () {
                     Navigator.pop(context);
@@ -212,7 +212,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 
                 const SizedBox(height: 0),
                 
-                // Title with image
+
                 Padding(
                   padding: const EdgeInsets.only(left: 80.0, bottom: 20),
                   child: Image.asset(
@@ -237,7 +237,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 
                 const SizedBox(height: 16),
                 
-                // Description
+
                 const Padding(
                   padding: EdgeInsets.only(left: 20.0),
                   child: Text(
@@ -252,7 +252,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 
                 const SizedBox(height: 40),
                 
-                // Email Field with label
+
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -304,7 +304,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                 
                 const Spacer(),
                 
-                // Continue Button
                 SizedBox(
                   width: double.infinity,
                   height: 50,
