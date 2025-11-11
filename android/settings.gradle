@@ -1,0 +1,40 @@
+// android/settings.gradle
+
+pluginManagement {
+    // Garde la détection du SDK Flutter (nécessaire)
+    def flutterSdkPath = {
+        def properties = new Properties()
+        file("local.properties").withInputStream { properties.load(it) }
+        def flutterSdkPath = properties.getProperty("flutter.sdk")
+        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+        return flutterSdkPath
+    }()
+
+    // Nécessaire pour les builds Flutter
+    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    // Déclare ici les versions de plugins (AGP + Kotlin + loader Flutter)
+    plugins {
+        id "com.android.application" version "8.3.2"
+        id "com.android.library"    version "8.3.2"
+        id "org.jetbrains.kotlin.android" version "1.9.22"
+        id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+    }
+}
+
+// Active les plugins (sans les appliquer au module app pour AGP/Kotlin)
+plugins {
+    id "dev.flutter.flutter-plugin-loader"
+    id "com.android.application" apply false
+    id "com.android.library"    apply false
+    id "org.jetbrains.kotlin.android" apply false
+}
+
+// Garde uniquement le module app
+include ':app'

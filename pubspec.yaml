@@ -1,0 +1,44 @@
+name: feedback_app
+description: "EventEase – Module 6 : Suivi et Historique des Prestations avec CRUD Feedback et Statistiques locales"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 🟣 Interface utilisateur
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+
+  # 🟣 Gestion d'état et persistance locale
+  provider: ^6.1.2
+  shared_preferences: ^2.2.3
+  sqflite: ^2.3.3
+  path: ^1.9.0
+
+  # 🟣 Notifications (API simulée)
+  flutter_local_notifications: ^17.2.3
+
+  # 🟣 Statistiques et graphiques
+  fl_chart: ^0.66.0
+
+  # 🟣 Timeline (optionnel)
+  timeline_tile: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/profanity.json
+    - assets/bad_words.txt
+    - assets/images/
+
