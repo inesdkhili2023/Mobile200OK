@@ -7,6 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:giphy_picker/giphy_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'giphy_service.dart'; // Votre service Giphy
 
 class MessagePage extends StatefulWidget {
   final String userName;
@@ -56,6 +59,12 @@ class _MessagePageState extends State<MessagePage> {
   double _playbackDuration = 0.0;
   Timer? _playbackTimer;
 
+  // Variables d'état pour Giphy
+bool _isGiphyPickerOpen = false;
+final TextEditingController _giphySearchController = TextEditingController();
+List<Map<String, dynamic>> _giphyResults = []; // ✅ Changé en List<Map>
+bool _isLoadingGifs = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +78,118 @@ class _MessagePageState extends State<MessagePage> {
     _audioPlayer = FlutterSoundPlayer();
     _initAudio();
   }
+
+
+// 🆕 Ouvrir le sélecteur de GIFs
+Future<void> _openGiphyPicker() async {
+  try {
+    setState(() {
+      _isGiphyPickerOpen = true;
+      _isLoadingGifs = true;
+    });
+    
+    // Charger les GIFs tendance
+    final trendingGifs = await GiphyService.getTrendingGifs(limit: 20);
+    
+    setState(() {
+      _giphyResults = trendingGifs;
+      _isLoadingGifs = false;
+    });
+    
+  } catch (e) {
+    print('❌ Erreur ouverture Giphy: $e');
+    setState(() {
+      _isLoadingGifs = false;
+    });
+  }
+}
+
+// 🆕 Rechercher des GIFs
+Future<void> _searchGifs(String query) async {
+  if (query.isEmpty) {
+    _openGiphyPicker();
+    return;
+  }
+  
+  setState(() {
+    _isLoadingGifs = true;
+  });
+  
+  try {
+    final gifs = await GiphyService.searchGifs(query, limit: 30);
+    
+    setState(() {
+      _giphyResults = gifs;
+      _isLoadingGifs = false;
+    });
+    
+  } catch (e) {
+    print('❌ Erreur recherche Giphy: $e');
+    setState(() {
+      _isLoadingGifs = false;
+    });
+  }
+}
+
+
+
+// 🆕 Widget pour afficher un GIF dans la liste
+Widget _buildGifItem(Map<String, dynamic> gif) {
+  final String previewUrl = gif['preview_url'] ?? gif['url'];
+  final String title = gif['title'] ?? 'GIF';
+  
+  return GestureDetector(
+    onTap: () => _sendGif(gif),
+    child: Container(
+      margin: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          children: [
+            CachedNetworkImage(
+              imageUrl: previewUrl,
+              width: double.infinity,
+              height: 120,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: Colors.grey[200],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.error),
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                color: Colors.black54,
+                child: Text(
+                  title.length > 20 ? '${title.substring(0, 20)}...' : title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   Future<void> _initAudio() async {
     try {
@@ -381,6 +502,60 @@ class _MessagePageState extends State<MessagePage> {
     }
   }
 
+  /// 🆕 ENVOYER UN GIF
+Future<void> _sendGif(Map<String, dynamic> gif) async {
+  try {
+    final String gifUrl = gif['preview_url'] ?? gif['url'];
+    final String messageText = "🎆 GIF"; // ⚠️ IMPORTANT: Doit contenir "🎆"
+    
+    print('🔄 Envoi GIF - URL: $gifUrl');
+    
+    // Sauvegarder dans la base avec l'URL du GIF
+    await _dbHelper.insertMessage(
+      widget.userId, 
+      messageText, 
+      sendAsMe,
+      gifUrl: gifUrl,
+    );
+    
+    // Mettre à jour le dernier message
+    final now = DateTime.now();
+    final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    await _dbHelper.updateLastMessage(widget.userId, messageText, time);
+    
+    // Fermer le picker
+    setState(() {
+      _isGiphyPickerOpen = false;
+      _giphyResults.clear();
+      _giphySearchController.clear();
+    });
+    
+    // Recharger les messages
+    await _loadMessages();
+    
+    // Confirmation
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎆 GIF envoyé !'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+    
+  } catch (e) {
+    print('❌ Erreur envoi GIF: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur envoi GIF: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
   /// Méthode pour lire un message vocal
   Future<void> _playVoiceMessage(int messageId, String messageText, String? audioPath) async {
     try {
@@ -651,9 +826,16 @@ class _MessagePageState extends State<MessagePage> {
     final String text = msg['text'];
     final bool isImage = text.contains("📷");
     final bool isVoice = text.contains("🎵");
+    final bool isGif = text.contains("🎆");
     final int messageId = msg['id'];
     final bool isMe = msg['isMe'] == 1;
     final String? mediaPath = msg['audioPath']; // Renommer pour plus de clarté
+    final String? gifUrl = msg['gifUrl'];
+
+// 🆕 VÉRIFIER SI C'EST UN MESSAGE GIF
+  if (isGif && gifUrl != null && gifUrl.isNotEmpty) {
+    return _buildGifMessage(gifUrl, isMe);
+  }
     
     if (isImage) {
       return _buildImageMessage(mediaPath, isMe);
@@ -672,6 +854,144 @@ class _MessagePageState extends State<MessagePage> {
       ),
     );
   }
+
+  /// 🆕 Widget pour afficher un GIF dans un message
+Widget _buildGifMessage(String gifUrl, bool isMe) {
+  return GestureDetector(
+    onTap: () {
+      _showFullGif(gifUrl);
+    },
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          constraints: const BoxConstraints(
+            maxWidth: 250,
+            maxHeight: 200,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[400]!),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: CachedNetworkImage(
+              imageUrl: gifUrl,
+              width: 250,
+              height: 200,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                width: 250,
+                height: 200,
+                color: Colors.grey[200],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              errorWidget: (context, url, error) {
+                print('❌ Erreur chargement GIF: $url - $error');
+                return _buildGifFallback();
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'GIF',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 🆕 Fallback si le GIF ne charge pas
+Widget _buildGifFallback() {
+  return Container(
+    width: 250,
+    height: 200,
+    color: Colors.grey[200],
+    child: const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.animation, color: Colors.deepPurple, size: 40),
+        SizedBox(height: 8),
+        Text(
+          'GIF',
+          style: TextStyle(
+            color: Colors.deepPurple,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 🆕 Afficher un GIF en plein écran
+void _showFullGif(String gifUrl) {
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: CachedNetworkImage(
+                imageUrl: gifUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error, color: Colors.white, size: 50),
+                        SizedBox(height: 16),
+                        Text(
+                          'Impossible de charger le GIF',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                radius: 16,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   /// 🆕 Méthode dédiée pour l'affichage des images
   Widget _buildImageMessage(String? imagePath, bool isMe) {
@@ -1070,382 +1390,510 @@ Widget _buildMessageBubble(Map<String, dynamic> msg) {
   );
 }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.userName,
-              style: const TextStyle(color: Colors.deepPurple, fontSize: 18),
-            ),
-            if (otherUserIsTyping && !sendAsMe)
-              const Text(
-                'est en train d\'écrire...',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
-              )
-            else if (isTyping && sendAsMe)
-              Text(
-                '${widget.userName} voit que vous écrivez...',
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: Colors.white,
+    appBar: AppBar(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.userName,
+            style: const TextStyle(color: Colors.deepPurple, fontSize: 18),
+          ),
+          if (otherUserIsTyping && !sendAsMe)
+            const Text(
+              'est en train d\'écrire...',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
               ),
-          ],
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.deepPurple),
-          onPressed: () => Navigator.pop(context),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: sendAsMe ? Colors.deepPurple.shade100 : Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(12),
+            )
+          else if (isTyping && sendAsMe)
+            Text(
+              '${widget.userName} voit que vous écrivez...',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
             ),
-            child: Center(
-              child: Text(
-                sendAsMe ? 'MOI' : widget.userName.split(' ')[0].toUpperCase(),
-                style: TextStyle(
-                  color: sendAsMe ? Colors.deepPurple : Colors.orange.shade900,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+        ],
+      ),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios, color: Colors.deepPurple),
+        onPressed: () => Navigator.pop(context),
+      ),
+      backgroundColor: Colors.white,
+      elevation: 0,
+      actions: [
+        Container(
+          margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: sendAsMe ? Colors.deepPurple.shade100 : Colors.orange.shade100,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              sendAsMe ? 'MOI' : widget.userName.split(' ')[0].toUpperCase(),
+              style: TextStyle(
+                color: sendAsMe ? Colors.deepPurple : Colors.orange.shade900,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.swap_horiz, color: Colors.deepPurple),
-            tooltip: 'Changer d\'expéditeur',
-            onPressed: () {
-              setState(() {
-                sendAsMe = !sendAsMe;
-                isTyping = false;
-                otherUserIsTyping = false;
-              });
-              _typingTimer?.cancel();
-              _simulateTypingTimer?.cancel();
+        ),
+        IconButton(
+          icon: const Icon(Icons.swap_horiz, color: Colors.deepPurple),
+          tooltip: 'Changer d\'expéditeur',
+          onPressed: () {
+            setState(() {
+              sendAsMe = !sendAsMe;
+              isTyping = false;
+              otherUserIsTyping = false;
+            });
+            _typingTimer?.cancel();
+            _simulateTypingTimer?.cancel();
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    Icon(
+                      sendAsMe ? Icons.person : Icons.person_outline,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      sendAsMe 
+                          ? '💬 Vous envoyez maintenant' 
+                          : '💬 ${widget.userName} envoie maintenant',
+                    ),
+                  ],
+                ),
+                duration: const Duration(seconds: 2),
+                backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
+              ),
+            );
+          },
+        ),
+        
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
+          onSelected: (value) async {
+            if (value == 'debug') {
+              print('\n🔍 === MESSAGE PAGE DEBUG ===');
+              print('User: ${widget.userName} (${widget.userId})');
+              print('Messages count: ${messages.length}');
+              print('Send mode: ${sendAsMe ? "MOI" : widget.userName}');
               
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(
-                        sendAsMe ? Icons.person : Icons.person_outline,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        sendAsMe 
-                            ? '💬 Vous envoyez maintenant' 
-                            : '💬 ${widget.userName} envoie maintenant',
-                      ),
-                    ],
-                  ),
-                  duration: const Duration(seconds: 2),
-                  backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
+              await _dbHelper.printAllMessages();
+              await _dbHelper.printDatabaseStats();
+              
+              final path = await _dbHelper.getDatabasePath();
+              print('📍 Database: $path');
+              print('=========================\n');
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Voir la console')),
+                );
+              }
+            } else if (value == 'clear') {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Supprimer les messages?'),
+                  content: const Text('Tous les messages seront supprimés.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annuler'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
                 ),
               );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.bug_report, color: Colors.red),
-            onPressed: _debugMedia,
-            tooltip: 'Debug médias',
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.deepPurple),
-            onSelected: (value) async {
-              if (value == 'debug') {
-                print('\n🔍 === MESSAGE PAGE DEBUG ===');
-                print('User: ${widget.userName} (${widget.userId})');
-                print('Messages count: ${messages.length}');
-                print('Send mode: ${sendAsMe ? "MOI" : widget.userName}');
-                
-                await _dbHelper.printAllMessages();
-                await _dbHelper.printDatabaseStats();
-                
-                final path = await _dbHelper.getDatabasePath();
-                print('📍 Database: $path');
-                print('=========================\n');
+              
+              if (confirm == true) {
+                await _dbHelper.deleteMessages(widget.userId);
+                await _loadMessages();
                 
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Voir la console')),
+                    const SnackBar(content: Text('Messages supprimés')),
                   );
                 }
-              } else if (value == 'clear') {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Supprimer les messages?'),
-                    content: const Text('Tous les messages seront supprimés.'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Annuler'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-                
-                if (confirm == true) {
-                  await _dbHelper.deleteMessages(widget.userId);
-                  await _loadMessages();
-                  
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Messages supprimés')),
-                    );
-                  }
-                }
               }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'debug',
-                child: Row(
-                  children: [
-                    Icon(Icons.bug_report, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Debug'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Text('Supprimer tout'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: Colors.grey[300],
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          "Aucun message",
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          "Commencez la conversation avec ${widget.userName}",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(10),
-                    itemCount: messages.length + (otherUserIsTyping && !sendAsMe ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == messages.length && otherUserIsTyping && !sendAsMe) {
-                        return Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 5),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: _TypingIndicator(),
-                          ),
-                        );
-                      }
-
-                      final msg = messages[index];
-                      return _buildMessageBubble(msg);
-                    },
-                  ),
-          ),
-          
-          if (otherUserIsTyping && !sendAsMe)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                border: Border(
-                  top: BorderSide(color: Colors.grey[300]!),
-                ),
-              ),
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'debug',
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: Colors.orange,
-                    child: Text(
-                      widget.userName[0],
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${widget.userName} est en train d\'écrire',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _TypingIndicator(),
+                  Icon(Icons.bug_report, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Debug'),
                 ],
               ),
             ),
-          
-          const Divider(height: 1),
-          
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: [
-                if (isRecording)
+            const PopupMenuItem(
+              value: 'clear',
+              child: Row(
+                children: [
+                  Icon(Icons.delete, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('Supprimer tout'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+    body: Stack( // ⬅️ CHANGEMENT IMPORTANT: Column → Stack
+      children: [
+        // Interface principale de chat
+        Column(
+          children: [
+            Expanded(
+              child: messages.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 64,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            "Aucun message",
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Commencez la conversation avec ${widget.userName}",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(10),
+                      itemCount: messages.length + (otherUserIsTyping && !sendAsMe ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == messages.length && otherUserIsTyping && !sendAsMe) {
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 5),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: _TypingIndicator(),
+                            ),
+                          );
+                        }
+
+                        final msg = messages[index];
+                        return _buildMessageBubble(msg);
+                      },
+                    ),
+            ),
+            
+            if (otherUserIsTyping && !sendAsMe)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  border: Border(
+                    top: BorderSide(color: Colors.grey[300]!),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: Colors.orange,
+                      child: Text(
+                        widget.userName[0],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${widget.userName} est en train d\'écrire',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _TypingIndicator(),
+                  ],
+                ),
+              ),
+            
+            const Divider(height: 1),
+            
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                children: [
+                  if (isRecording)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.mic, color: Colors.red, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Enregistrement... $_recordingDuration"s"',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _stopRecording,
+                            child: const Icon(Icons.stop, color: Colors.red, size: 24),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.photo_library, color: Colors.deepPurple),
+                        tooltip: 'Envoyer une image',
+                        onPressed: _pickImage,
+                      ),
+                      
+                      // 🆕 BOUTON GIF
+                      IconButton(
+                        icon: const Icon(Icons.gif, color: Colors.deepPurple),
+                        tooltip: 'Envoyer un GIF',
+                        onPressed: _openGiphyPicker,
+                      ),
+                      
+                      IconButton(
+                        icon: Icon(
+                          isRecording ? Icons.stop : Icons.mic,
+                          color: isRecording ? Colors.red : Colors.deepPurple,
+                        ),
+                        tooltip: isRecording ? 'Arrêter l\'enregistrement' : 'Message vocal',
+                        onPressed: isRecording ? _stopRecording : _startRecording,
+                      ),
+                      
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          decoration: InputDecoration(
+                            hintText: sendAsMe 
+                                ? "Tapez votre message..."
+                                : "Message de ${widget.userName}...",
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(25),
+                              borderSide: BorderSide(
+                                color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(25),
+                              borderSide: BorderSide(
+                                color: sendAsMe ? Colors.deepPurple : Colors.orange,
+                                width: 2,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[50],
+                          ),
+                          onSubmitted: (_) => _sendMessage(),
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 8),
+                      
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                          onPressed: _sendMessage,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        
+        // 🆕 MODAL GIPHY - PARTIE MANQUANTE
+        if (_isGiphyPickerOpen)
+          Positioned.fill(
+            child: Container(
+              color: Colors.white,
+              child: Column(
+                children: [
+                  // Header du modal
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 8,
+                        ),
+                      ],
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.mic, color: Colors.red, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Enregistrement... $_recordingDuration"s"',
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.deepPurple),
+                          onPressed: () {
+                            setState(() {
+                              _isGiphyPickerOpen = false;
+                              _giphyResults.clear();
+                              _giphySearchController.clear();
+                            });
+                          },
                         ),
                         const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: _stopRecording,
-                          child: const Icon(Icons.stop, color: Colors.red, size: 24),
+                        const Text(
+                          'Choisir un GIF',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.deepPurple),
+                          onPressed: () {
+                            setState(() {
+                              _isGiphyPickerOpen = false;
+                              _giphyResults.clear();
+                              _giphySearchController.clear();
+                            });
+                          },
                         ),
                       ],
                     ),
                   ),
-                
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.photo_library, color: Colors.deepPurple),
-                      tooltip: 'Envoyer une image',
-                      onPressed: _pickImage,
-                    ),
-                    
-                    IconButton(
-                      icon: Icon(
-                        isRecording ? Icons.stop : Icons.mic,
-                        color: isRecording ? Colors.red : Colors.deepPurple,
-                      ),
-                      tooltip: isRecording ? 'Arrêter l\'enregistrement' : 'Message vocal',
-                      onPressed: isRecording ? _stopRecording : _startRecording,
-                    ),
-                    
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        decoration: InputDecoration(
-                          hintText: sendAsMe 
-                              ? "Tapez votre message..."
-                              : "Message de ${widget.userName}...",
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide(
-                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide(
-                              color: sendAsMe ? Colors.deepPurple : Colors.orange,
-                              width: 2,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
+                  
+                  // Barre de recherche
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      controller: _giphySearchController,
+                      decoration: InputDecoration(
+                        hintText: 'Rechercher des GIFs...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _giphySearchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _giphySearchController.clear();
+                                  _openGiphyPicker();
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(25),
                         ),
-                        onSubmitted: (_) => _sendMessage(),
-                        textCapitalization: TextCapitalization.sentences,
                       ),
+                      onChanged: (value) {
+                        // Recherche avec délai pour éviter trop d'appels API
+                        Future.delayed(const Duration(milliseconds: 500), () {
+                          if (value == _giphySearchController.text) {
+                            _searchGifs(value);
+                          }
+                        });
+                      },
                     ),
-                    
-                    const SizedBox(width: 8),
-                    
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: sendAsMe ? Colors.deepPurple : Colors.orange,
-                      child: IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                        onPressed: _sendMessage,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                  
+                  // Liste des GIFs
+                  Expanded(
+                    child: _isLoadingGifs && _giphyResults.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : _giphyResults.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'Aucun GIF trouvé',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              )
+                            : GridView.builder(
+                                padding: const EdgeInsets.all(8),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 4,
+                                  mainAxisSpacing: 4,
+                                  childAspectRatio: 1.0,
+                                ),
+                                itemCount: _giphyResults.length,
+                                itemBuilder: (context, index) {
+                                  final gif = _giphyResults[index];
+                                  return _buildGifItem(gif);
+                                },
+                              ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
