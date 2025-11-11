@@ -34,7 +34,9 @@ CREATE TABLE booking(
   pax INTEGER,
   price_cents INTEGER,
   status TEXT,
-  email TEXT
+  email TEXT,
+   latitude REAL,
+  longitude REAL
 );
 ''');
       },

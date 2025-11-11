@@ -5,7 +5,8 @@ import '../logic/providers.dart';
 import '../data/models.dart';
 
 class CalendarSlots extends ConsumerStatefulWidget {
-  const CalendarSlots({super.key});
+  final Function(DateTime, String)? onSlotSelected; 
+  const CalendarSlots({super.key, this.onSlotSelected});
 
   @override
   ConsumerState<CalendarSlots> createState() => _CalendarSlotsState();
@@ -129,8 +130,9 @@ class _CalendarSlotsState extends ConsumerState<CalendarSlots> {
             selected: selectedSlot == s,
             onSelected: _bookedSlots.contains(s)
                 ? null // désactivé si réservé
-                : (_) =>
-                    ref.read(selectedSlotProvider.notifier).state = s,
+                : (_) {
+                    ref.read(selectedSlotProvider.notifier).state = s;
+                    widget.onSlotSelected?.call(selectedDate, s); },
             selectedColor: Colors.green.shade600,
             backgroundColor: _bookedSlots.contains(s)
                 ? Colors.red.shade300

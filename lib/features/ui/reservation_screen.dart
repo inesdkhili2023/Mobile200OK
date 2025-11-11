@@ -59,9 +59,21 @@ class ReservationScreen extends ConsumerWidget {
             title: Text(city ?? 'Choisir une ville'),
             trailing: const Icon(Icons.my_location),
             onTap: () async {
-              final sel = await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LocationPicker()));
-              if (sel != null) ref.read(selectedCityProvider.notifier).state = sel as String;
-            },
+  final sel = await Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => const LocationPicker()),
+  );
+
+  if (sel != null) {
+    if (sel is Map<String, dynamic>) {
+      ref.read(selectedCityProvider.notifier).state = sel['city'];
+      ref.read(userLatProvider.notifier).state = sel['lat'];
+      ref.read(userLngProvider.notifier).state = sel['lng'];
+    } else if (sel is String) {
+      ref.read(selectedCityProvider.notifier).state = sel;
+    }
+  }
+},
+
           ),
           const SizedBox(height: 8),
           const CalendarSlots(), // calendrier + créneaux

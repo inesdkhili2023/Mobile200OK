@@ -6,6 +6,7 @@ import '../data/models.dart';
 import '../../../core/notifications/local_notifs.dart';
 import 'payment_sheet.dart';
 import 'package:go_router/go_router.dart';
+import '../../../services/location_service.dart';
 
 class BookingForm extends ConsumerStatefulWidget {
   final String city; final DateTime date; final String slot; final int pax;
@@ -95,6 +96,9 @@ class _BookingFormState extends ConsumerState<BookingForm> {
   );
 
   try {
+    final latitude = ref.read(userLatProvider);
+    final longitude = ref.read(userLngProvider);
+
     final booking = Booking(
       workerId: 'worker_1',
       workerName: 'GAROLD PAIN',
@@ -107,6 +111,8 @@ class _BookingFormState extends ConsumerState<BookingForm> {
       priceCents: priceCents,
       status: 'paid',
       email: _email.text,
+      latitude: latitude,
+      longitude: longitude,
     );
 
     final id = await ref.read(bookingRepoProvider).create(booking);

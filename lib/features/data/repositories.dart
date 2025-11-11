@@ -25,4 +25,8 @@ class BookingRepo {
   Future<List<Booking>> getByEmail(String email) => dao.getByEmail(email);
   Future<List<String>> getBookedSlots(String workerId, DateTime date) =>
       dao.getBookedSlots(workerId, date);
+  Future<void> updateStatus(int id, String newStatus) =>
+    dao.updateStatus(id, newStatus);
+    Future<void> update(Booking booking) => dao.update(booking);
+
 }

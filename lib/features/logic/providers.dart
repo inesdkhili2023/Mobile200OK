@@ -11,6 +11,9 @@ final selectedCityProvider = StateProvider<String?>((_) => null);
 final selectedDateProvider = StateProvider<DateTime?>((_) => null);
 final selectedSlotProvider = StateProvider<String?>((_) => null);
 final paxProvider = StateProvider<int>((_) => 1);
+final userLatProvider = StateProvider<double?>((ref) => null);
+final userLngProvider = StateProvider<double?>((ref) => null);
+
 final bookingsProvider = FutureProvider<List<Booking>>((ref) async {
   final repo = ref.read(bookingRepoProvider);
   return repo.getAll();

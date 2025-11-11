@@ -42,7 +42,9 @@ class Booking {
   final int pax;
   final int priceCents;            // 6000 = 60 Dt
   final String status;             // created, paid, cancelled
-  final String email;              // client email
+  final String email;   
+  final double? latitude;
+final double? longitude;           // client email
 
   Booking({
     this.id,
@@ -57,7 +59,43 @@ class Booking {
     required this.priceCents,
     required this.status,
     required this.email,
+    required this.latitude,
+    required this.longitude,
+
   });
+  Booking copyWith({
+    int? id,
+    String? workerId,
+    String? workerName,
+    String? city,
+    DateTime? date,
+    String? slot,
+    String? description,
+    String? address,
+    int? pax,
+    int? priceCents,
+    String? status,
+    String? email,
+    double? latitude,
+    double? longitude,
+  }) {
+    return Booking(
+      id: id ?? this.id,
+      workerId: workerId ?? this.workerId,
+      workerName: workerName ?? this.workerName,
+      city: city ?? this.city,
+      date: date ?? this.date,
+      slot: slot ?? this.slot,
+      description: description ?? this.description,
+      address: address ?? this.address,
+      pax: pax ?? this.pax,
+      priceCents: priceCents ?? this.priceCents,
+      status: status ?? this.status,
+      email: email ?? this.email,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+    );
+  }
 
   Map<String, Object?> toRow() => {
     'id': id,
@@ -72,6 +110,8 @@ class Booking {
     'price_cents': priceCents,
     'status': status,
     'email': email,
+    'latitude': latitude,
+    'longitude': longitude,
   };
 
   static Booking fromRow(Map<String, Object?> r) => Booking(
@@ -87,5 +127,7 @@ class Booking {
     priceCents: r['price_cents'] as int,
     status: r['status'] as String,
     email: r['email'] as String,
+    latitude: r['latitude'] as double?,
+    longitude: r['longitude'] as double?,
   );
 }

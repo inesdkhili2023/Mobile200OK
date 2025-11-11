@@ -40,4 +40,23 @@ Future<List<String>> getBookedSlots(String workerId, DateTime date) async {
   return rows.map((r) => r['slot'] as String).toList();
 }
 
+Future<void> updateStatus(int id, String newStatus) async {
+  final db = await AppDb.instance;
+  await db.update(
+    'booking',
+    {'status': newStatus},
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
+Future<void> update(Booking booking) async {
+  final db = await AppDb.instance;
+  await db.update(
+    'booking',
+    booking.toRow(),
+    where: 'id = ?',
+    whereArgs: [booking.id],
+  );
+}
+
 }
