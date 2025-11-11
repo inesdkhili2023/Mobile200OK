@@ -3,6 +3,7 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:service_app/models/worker_model.dart';
 import 'package:service_app/services/database_helper.dart';
 import 'package:service_app/services/shared_prefs_service.dart';
+import 'package:service_app/services/image_service.dart';
 import 'package:service_app/screens/worker_detail_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
@@ -17,7 +18,7 @@ class CategoryScreen extends StatefulWidget {
   State<CategoryScreen> createState() => _CategoryScreenState();
 }
 
-class _CategoryScreenState extends State<CategoryScreen> {
+class _CategoryScreenState extends State<CategoryScreen> with WidgetsBindingObserver {
   List<WorkerModel> workers = [];
   List<int> selectedWorkerIds = [];
   bool isLoading = true;
@@ -25,22 +26,46 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadWorkers();
+    WidgetsBinding.instance.addObserver(this);
+    _loadData();
     _loadSelectedWorkers();
   }
 
-  Future<void> _loadWorkers() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Recharger quand l'app revient au premier plan
+      _loadData();
+    }
+  }
+
+  
+
+  Future<void> _loadData() async {
     setState(() {
       isLoading = true;
     });
 
-    final db = DatabaseHelper.instance;
-    final loadedWorkers = await db.getWorkersByType(widget.categoryName);
-
-    setState(() {
-      workers = loadedWorkers;
-      isLoading = false;
-    });
+    try {
+      final db = DatabaseHelper.instance;
+      final loadedWorkers = await db.getWorkersByType(widget.categoryName);
+      
+      setState(() {
+        workers = loadedWorkers;
+        isLoading = false;
+      });
+    } catch (e) {
+      print('❌ Erreur lors du chargement: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   void _loadSelectedWorkers() {
@@ -56,27 +81,32 @@ class _CategoryScreenState extends State<CategoryScreen> {
     if (isSelected) {
       await SharedPrefsService.removeSelectedWorker(worker.id!);
       await db.toggleWorkerSelection(worker.id!, false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${worker.fullName} removed from cart'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${worker.fullName} supprimé du panier'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } else {
       await SharedPrefsService.addSelectedWorker(worker.id!);
       await db.toggleWorkerSelection(worker.id!, true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${worker.fullName} added to cart'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: const Color(0xFF6C5CE7),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${worker.fullName} ajouté au panier'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: const Color(0xFF6C5CE7),
+          ),
+        );
+      }
     }
 
+    // Recharger les données pour mettre à jour l'interface
     _loadSelectedWorkers();
-    _loadWorkers();
+    _loadData(); // Cette ligne met à jour la liste des workers
   }
 
   @override
@@ -91,7 +121,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          '${widget.categoryName} Category',
+          'Catégorie ${widget.categoryName}',
           style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
@@ -134,157 +164,40 @@ class _CategoryScreenState extends State<CategoryScreen> {
         ],
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator(
-              color: Color(0xFF6C5CE7),
-            ))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF6C5CE7),
+              ),
+            )
           : workers.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.person_off,
-                        size: 80,
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No workers found',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Try searching for another category',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  children: [
-                    Expanded(
-                      child: GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 0.70,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                        ),
-                        itemCount: workers.length,
-                        itemBuilder: (context, index) {
-                          final worker = workers[index];
-                          final isSelected = selectedWorkerIds.contains(worker.id);
-                          return _buildWorkerCard(worker, isSelected);
-                        },
-                      ),
-                    ),
-                    if (selectedWorkerIds.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, -5),
-                            ),
-                          ],
-                        ),
-                        child: SafeArea(
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    title: const Text('Proceed to Booking'),
-                                    content: Text(
-                                      'You have selected ${selectedWorkerIds.length} worker(s). Do you want to proceed?',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      ElevatedButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Booking ${selectedWorkerIds.length} worker(s) confirmed!',
-                                              ),
-                                              backgroundColor: const Color(0xFF6C5CE7),
-                                            ),
-                                          );
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF6C5CE7),
-                                        ),
-                                        child: const Text('Confirm'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6C5CE7),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Text(
-                                    'Proceed',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.3),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${selectedWorkerIds.length}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+              ? _buildEmptyState()
+              : _buildWorkersContent(),
+    );
+  }
+
+  Widget _buildWorkersContent() {
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.70,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            itemCount: workers.length,
+            itemBuilder: (context, index) {
+              final worker = workers[index];
+              final isSelected = selectedWorkerIds.contains(worker.id);
+              return _buildWorkerCard(worker, isSelected);
+            },
+          ),
+        ),
+        if (selectedWorkerIds.isNotEmpty)
+          _buildReservationButton(),
+      ],
     );
   }
 
@@ -297,7 +210,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
             builder: (context) => WorkerDetailScreen(worker: worker),
           ),
         );
-        _loadWorkers();
+        // Recharger après retour du détail
+        _loadData();
         _loadSelectedWorkers();
       },
       child: Container(
@@ -312,7 +226,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withAlpha(20),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -323,6 +237,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
           children: [
             Stack(
               children: [
+                // Image du worker
                 Container(
                   height: 130,
                   decoration: BoxDecoration(
@@ -330,12 +245,12 @@ class _CategoryScreenState extends State<CategoryScreen> {
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(14),
                     ),
-                    image: const DecorationImage(
-                      image: NetworkImage(
-                        'https://images.unsplash.com/photo-1542909168-82c3e7fdca44?w=400',
-                      ),
-                      fit: BoxFit.cover,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(14),
                     ),
+                    child: _buildWorkerImage(worker),
                   ),
                 ),
                 Positioned(
@@ -352,7 +267,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
+                            color: Colors.black.withAlpha(50),
                             blurRadius: 4,
                           ),
                         ],
@@ -361,6 +276,29 @@ class _CategoryScreenState extends State<CategoryScreen> {
                         isSelected ? Icons.check : Icons.add,
                         color: isSelected ? Colors.white : Colors.black,
                         size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+                // Badge d'expérience
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withAlpha(204),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${worker.yearsOfExperience} ans',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
@@ -406,9 +344,19 @@ class _CategoryScreenState extends State<CategoryScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      worker.workType,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const Spacer(),
                     Text(
-                      '${worker.price} DT',
+                      '${worker.price} DT/heure',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -422,6 +370,142 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildReservationButton() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(25),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: const Text('Procéder à la réservation'),
+                  content: Text(
+                    'Vous avez sélectionné ${selectedWorkerIds.length} prestataire(s). Voulez-vous continuer?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Annuler'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Réservation de ${selectedWorkerIds.length} prestataire(s) confirmée!',
+                              ),
+                              backgroundColor: const Color(0xFF6C5CE7),
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6C5CE7),
+                      ),
+                      child: const Text('Confirmer'),
+                    ),
+                  ],
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6C5CE7),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Procéder',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(76),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${selectedWorkerIds.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_off, size: 80, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text(
+            'Aucun prestataire trouvé',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF757575),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Essayez une autre catégorie',
+            style: TextStyle(
+              fontSize: 14,
+              color: const Color(0xFF757575),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkerImage(WorkerModel worker) {
+    return ImageService.buildImage(
+      worker.profileImage ?? '',
+      fit: BoxFit.contain,
     );
   }
 }

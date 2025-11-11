@@ -1,8 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SharedPrefsService {
-  static SharedPreferences? _prefs;
-  
+static SharedPreferences? _prefs;  
   // Initialize SharedPreferences once at app startup
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();

@@ -5,6 +5,8 @@ import 'package:service_app/screens/become_worker_screen.dart';
 import 'package:service_app/services/shared_prefs_service.dart';
 import 'package:service_app/services/database_helper.dart';
 import 'package:service_app/screens/notifications_screen.dart';
+import 'package:service_app/screens/my_services_screen.dart';
+import 'package:service_app/models/worker_model.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
       selectedWorkersCount = selectedIds.length;
     });
   }
-  
 
   void _onItemTapped(int index) {
     if (index == 1) {
@@ -227,61 +228,56 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ],
         ),
-// Dans le _buildHeader() de HomeScreen, remplacez le bouton de notifications par:
-
-IconButton(
-  icon: Stack(
-    children: [
-      Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[300]!),
-        ),
-        child: const Icon(Icons.notifications_outlined),
-      ),
-      if (SharedPrefsService.getUnreadNotificationsCount() > 0)
-        Positioned(
-          right: 6,
-          top: 6,
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: const BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-            constraints: const BoxConstraints(
-              minWidth: 16,
-              minHeight: 16,
-            ),
-            child: Text(
-              '${SharedPrefsService.getUnreadNotificationsCount()}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
+        IconButton(
+          icon: Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: const Icon(Icons.notifications_outlined),
               ),
-              textAlign: TextAlign.center,
-            ),
+              if (SharedPrefsService.getUnreadNotificationsCount() > 0)
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '${SharedPrefsService.getUnreadNotificationsCount()}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const NotificationsScreen(),
+              ),
+            ).then((_) {
+              setState(() {}); // Refresh to update notification badge
+            });
+          },
         ),
-    ],
-  ),
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const NotificationsScreen(),
-      ),
-    ).then((_) {
-      setState(() {}); // Refresh to update notification badge
-    });
-  },
-),
-
-// N'oubliez pas d'importer:
-// import 'package:service_app/screens/notifications_screen.dart';
       ],
     );
   }
@@ -290,9 +286,11 @@ IconButton(
     final selectedIds = SharedPrefsService.getSelectedWorkers();
     
     if (selectedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No workers selected')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No workers selected')),
+        );
+      }
       return;
     }
 
@@ -300,7 +298,7 @@ IconButton(
     final workers = await Future.wait(
       selectedIds.map((id) => db.getWorkerById(id))
     );
-    final validWorkers = workers.whereType<dynamic>().toList();
+    final validWorkers = workers.whereType<WorkerModel>().toList();
 
     if (!mounted) return;
 
@@ -348,7 +346,9 @@ IconButton(
                       onPressed: () async {
                         await SharedPrefsService.removeSelectedWorker(worker.id!);
                         await db.toggleWorkerSelection(worker.id!, false);
-                        Navigator.pop(context);
+                        if (mounted) {
+                          Navigator.pop(context);
+                        }
                         _loadSelectedWorkersCount();
                       },
                     ),
@@ -362,12 +362,14 @@ IconButton(
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Booking ${validWorkers.length} worker(s)'),
-                      backgroundColor: const Color(0xFF6C5CE7),
-                    ),
-                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Booking ${validWorkers.length} worker(s)'),
+                        backgroundColor: const Color(0xFF6C5CE7),
+                      ),
+                    );
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6C5CE7),
@@ -649,6 +651,22 @@ IconButton(
               ),
             ),
             const SizedBox(height: 40),
+            
+            // Section Mes Services
+            _buildAccountOption(
+              icon: Icons.work_outline,
+              title: 'Mes Services',
+              subtitle: 'Gérer vos services créés',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MyServicesScreen(),
+                  ),
+                );
+              },
+            ),
+            
             _buildAccountOption(
               icon: Icons.work_outline,
               title: 'Become a Worker',
@@ -737,17 +755,39 @@ IconButton(
   Widget _buildAccountOption({
     required IconData icon,
     required String title,
+    String? subtitle,
     required VoidCallback onTap,
   }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF6C5CE7)),
-        title: Text(title),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF6C5CE7).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: const Color(0xFF6C5CE7)),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: subtitle != null 
+            ? Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              )
+            : null,
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
       ),
     );
   }
-  
 }

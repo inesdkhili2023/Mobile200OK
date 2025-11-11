@@ -1,3 +1,6 @@
+import 'package:latlong2/latlong.dart';
+import 'dart:math';
+
 class WorkerModel {
   final int? id;
   final String fullName;
@@ -12,8 +15,11 @@ class WorkerModel {
   final List<String>? portfolioImages;
   final int? totalReviews;
   final String? description;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
 
-  WorkerModel({
+  const WorkerModel({
     this.id,
     required this.fullName,
     required this.phoneNumber,
@@ -27,6 +33,9 @@ class WorkerModel {
     this.portfolioImages,
     this.totalReviews,
     this.description,
+    this.latitude,
+    this.longitude,
+    this.address,
   });
 
   Map<String, dynamic> toMap() {
@@ -44,6 +53,9 @@ class WorkerModel {
       'portfolioImages': portfolioImages?.join(','),
       'totalReviews': totalReviews,
       'description': description,
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
     };
   }
 
@@ -65,6 +77,9 @@ class WorkerModel {
           : null,
       totalReviews: map['totalReviews'],
       description: map['description'],
+      latitude: map['latitude'] != null ? double.parse(map['latitude'].toString()) : null,
+      longitude: map['longitude'] != null ? double.parse(map['longitude'].toString()) : null,
+      address: map['address'],
     );
   }
 
@@ -82,6 +97,9 @@ class WorkerModel {
     List<String>? portfolioImages,
     int? totalReviews,
     String? description,
+    double? latitude,
+    double? longitude,
+    String? address,
   }) {
     return WorkerModel(
       id: id ?? this.id,
@@ -97,6 +115,9 @@ class WorkerModel {
       portfolioImages: portfolioImages ?? this.portfolioImages,
       totalReviews: totalReviews ?? this.totalReviews,
       description: description ?? this.description,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      address: address ?? this.address,
     );
   }
 
@@ -107,20 +128,32 @@ class WorkerModel {
 
   bool get hasProfileImage => profileImage != null && profileImage!.isNotEmpty;
 
+  bool get hasLocation => latitude != null && longitude != null;
+
   String get experienceText {
     if (yearsOfExperience == 1) {
-      return '1 year of experience';
+      return '1 an d\'expérience';
     }
-    return '$yearsOfExperience years of experience';
+    return '$yearsOfExperience ans d\'expérience';
   }
 
   String get ratingText => rating.toStringAsFixed(1);
 
-  String get priceText => '$price DT';
+  String get priceText => '$price DT/heure';
+
+  String get locationText {
+    if (address != null && address!.isNotEmpty) {
+      return address!;
+    }
+    if (hasLocation) {
+      return '${latitude!.toStringAsFixed(4)}, ${longitude!.toStringAsFixed(4)}';
+    }
+    return 'Localisation non spécifiée';
+  }
 
   @override
   String toString() {
-    return 'WorkerModel(id: $id, fullName: $fullName, workType: $workType, rating: $rating, price: $price)';
+    return 'WorkerModel(id: $id, fullName: $fullName, workType: $workType, rating: $rating, price: $price, location: $locationText)';
   }
 
   @override
@@ -136,7 +169,10 @@ class WorkerModel {
         other.yearsOfExperience == yearsOfExperience &&
         other.rating == rating &&
         other.price == price &&
-        other.isSelected == isSelected;
+        other.isSelected == isSelected &&
+        other.latitude == latitude &&
+        other.longitude == longitude &&
+        other.address == address;
   }
 
   @override
@@ -149,7 +185,10 @@ class WorkerModel {
         yearsOfExperience.hashCode ^
         rating.hashCode ^
         price.hashCode ^
-        isSelected.hashCode;
+        isSelected.hashCode ^
+        latitude.hashCode ^
+        longitude.hashCode ^
+        address.hashCode;
   }
 
   // Méthode pour valider les données
@@ -164,9 +203,55 @@ class WorkerModel {
         price > 0;
   }
 
+  // Méthode pour valider avec localisation
+  bool isValidWithLocation() {
+    return isValid() && latitude != null && longitude != null;
+  }
+
   // Méthode pour obtenir un objet JSON
   Map<String, dynamic> toJson() => toMap();
 
   // Méthode pour créer depuis JSON
   factory WorkerModel.fromJson(Map<String, dynamic> json) => WorkerModel.fromMap(json);
+
+  // Méthode pour créer un LatLng à partir des coordonnées (pour OpenStreetMap)
+  LatLng? get latLng {
+    if (latitude != null && longitude != null) {
+      return LatLng(latitude!, longitude!);
+    }
+    return null;
+  }
+
+  // Méthode pour calculer la distance entre deux workers (en km)
+  double? distanceTo(WorkerModel other) {
+    if (!hasLocation || !other.hasLocation) return null;
+    
+    const double earthRadius = 6371; // Rayon de la Terre en km
+    
+    double lat1 = latitude! * (pi / 180);
+    double lon1 = longitude! * (pi / 180);
+    double lat2 = other.latitude! * (pi / 180);
+    double lon2 = other.longitude! * (pi / 180);
+    
+    double dLat = lat2 - lat1;
+    double dLon = lon2 - lon1;
+    
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    
+    return earthRadius * c;
+  }
+
+  // Méthode pour formater la distance
+  String? formattedDistanceTo(WorkerModel other) {
+    final distance = distanceTo(other);
+    if (distance == null) return null;
+    
+    if (distance < 1) {
+      return '${(distance * 1000).toStringAsFixed(0)} m';
+    } else {
+      return '${distance.toStringAsFixed(1)} km';
+    }
+  }
 }

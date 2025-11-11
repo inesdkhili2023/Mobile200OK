@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/worker_model.dart';
+import 'package:flutter/foundation.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -18,9 +19,16 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
+    // Delete existing database to force recreation with new schema
+    try {
+      await deleteDatabase(path);
+    } catch (e) {
+      debugPrint('Error deleting database: $e');
+    }
+
     return await openDatabase(
       path,
-      version: 2, // Incremented version for description field
+      version: 3, // Incremented version
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -28,20 +36,23 @@ class DatabaseHelper {
 
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE workers(
+      CREATE TABLE IF NOT EXISTS workers(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         fullName TEXT NOT NULL,
         phoneNumber TEXT NOT NULL,
         email TEXT NOT NULL,
         workType TEXT NOT NULL,
         yearsOfExperience INTEGER NOT NULL,
-        rating REAL DEFAULT 0.0,
         price INTEGER NOT NULL,
-        isSelected INTEGER DEFAULT 0,
+        rating REAL NOT NULL,
         profileImage TEXT,
         portfolioImages TEXT,
+        description TEXT,
+        latitude REAL,
+        longitude REAL,
+        address TEXT,
         totalReviews INTEGER DEFAULT 0,
-        description TEXT
+        isSelected INTEGER DEFAULT 0
       )
     ''');
 
@@ -51,9 +62,13 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Add description column if upgrading from version 1
       await db.execute('ALTER TABLE workers ADD COLUMN description TEXT');
       await db.execute('ALTER TABLE workers ADD COLUMN totalReviews INTEGER DEFAULT 0');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE workers ADD COLUMN latitude REAL');
+      await db.execute('ALTER TABLE workers ADD COLUMN longitude REAL');
+      await db.execute('ALTER TABLE workers ADD COLUMN address TEXT');
     }
   }
 
@@ -70,6 +85,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Experienced electrician specializing in residential and commercial installations.',
         'totalReviews': 96,
+        'latitude': 36.8065,
+        'longitude': 10.1815,
+        'address': 'Tunis, Tunisia',
       },
       {
         'fullName': 'Seml el Felahl',
@@ -82,6 +100,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Professional electrician with expertise in electrical repairs and maintenance.',
         'totalReviews': 90,
+        'latitude': 36.8025,
+        'longitude': 10.1795,
+        'address': 'Ariana, Tunisia',
       },
       {
         'fullName': 'Chokri Atia',
@@ -94,6 +115,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Skilled electrician offering quality electrical services at affordable rates.',
         'totalReviews': 86,
+        'latitude': 36.8005,
+        'longitude': 10.1775,
+        'address': 'Ben Arous, Tunisia',
       },
       {
         'fullName': 'Ahmed Ben Ali',
@@ -106,6 +130,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Master plumber with 10 years of experience in all plumbing services.',
         'totalReviews': 98,
+        'latitude': 36.8045,
+        'longitude': 10.1835,
+        'address': 'Tunis, Tunisia',
       },
       {
         'fullName': 'Mohamed Salah',
@@ -118,6 +145,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Expert carpenter specializing in custom furniture and woodwork.',
         'totalReviews': 92,
+        'latitude': 36.8085,
+        'longitude': 10.1855,
+        'address': 'Manouba, Tunisia',
       },
       {
         'fullName': 'Youssef Mansour',
@@ -130,6 +160,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'Professional cleaning service for homes and offices.',
         'totalReviews': 88,
+        'latitude': 36.8105,
+        'longitude': 10.1875,
+        'address': 'Tunis, Tunisia',
       },
       {
         'fullName': 'Karim Hamdi',
@@ -142,6 +175,9 @@ class DatabaseHelper {
         'isSelected': 0,
         'description': 'General repair specialist for home appliances and fixtures.',
         'totalReviews': 94,
+        'latitude': 36.8125,
+        'longitude': 10.1895,
+        'address': 'Tunis, Tunisia',
       },
     ];
 
@@ -151,21 +187,17 @@ class DatabaseHelper {
   }
 
   // CRUD Operations for Workers
-
-  /// Create - Insert a new worker
   Future<int> insertWorker(WorkerModel worker) async {
     final db = await database;
     return await db.insert('workers', worker.toMap());
   }
 
-  /// Read - Get all workers
   Future<List<WorkerModel>> getAllWorkers() async {
     final db = await database;
     final result = await db.query('workers', orderBy: 'rating DESC');
     return result.map((map) => WorkerModel.fromMap(map)).toList();
   }
 
-  /// Read - Get workers by type/category
   Future<List<WorkerModel>> getWorkersByType(String workType) async {
     final db = await database;
     final result = await db.query(
@@ -177,7 +209,6 @@ class DatabaseHelper {
     return result.map((map) => WorkerModel.fromMap(map)).toList();
   }
 
-  /// Read - Get a single worker by ID
   Future<WorkerModel?> getWorkerById(int id) async {
     final db = await database;
     final result = await db.query(
@@ -191,7 +222,6 @@ class DatabaseHelper {
     return null;
   }
 
-  /// Update - Update worker information
   Future<int> updateWorker(WorkerModel worker) async {
     final db = await database;
     return await db.update(
@@ -202,7 +232,6 @@ class DatabaseHelper {
     );
   }
 
-  /// Update - Update only the rating
   Future<int> updateWorkerRating(int workerId, double rating) async {
     final db = await database;
     return await db.update(
@@ -213,7 +242,6 @@ class DatabaseHelper {
     );
   }
 
-  /// Update - Toggle worker selection (for cart)
   Future<int> toggleWorkerSelection(int workerId, bool isSelected) async {
     final db = await database;
     return await db.update(
@@ -224,7 +252,6 @@ class DatabaseHelper {
     );
   }
 
-  /// Delete - Remove a worker
   Future<int> deleteWorker(int id) async {
     final db = await database;
     return await db.delete(
@@ -234,9 +261,7 @@ class DatabaseHelper {
     );
   }
 
-  // Advanced Search and Filter Methods
-
-  /// Search workers by name, work type, email, or description
+  // Search and Filter Methods
   Future<List<WorkerModel>> searchWorkers(String query) async {
     final db = await database;
     
@@ -255,11 +280,7 @@ class DatabaseHelper {
     return maps.map((map) => WorkerModel.fromMap(map)).toList();
   }
 
-  /// Get workers by rating range
-  Future<List<WorkerModel>> getWorkersByRating(
-    double minRating,
-    double maxRating,
-  ) async {
+  Future<List<WorkerModel>> getWorkersByRating(double minRating, double maxRating) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'workers',
@@ -271,11 +292,7 @@ class DatabaseHelper {
     return maps.map((map) => WorkerModel.fromMap(map)).toList();
   }
 
-  /// Get workers by price range
-  Future<List<WorkerModel>> getWorkersByPriceRange(
-    int minPrice,
-    int maxPrice,
-  ) async {
+  Future<List<WorkerModel>> getWorkersByPriceRange(int minPrice, int maxPrice) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'workers',
@@ -288,8 +305,6 @@ class DatabaseHelper {
   }
 
   // Statistics Methods
-
-  /// Get worker statistics
   Future<Map<String, dynamic>> getWorkerStats() async {
     final db = await database;
     
@@ -316,7 +331,6 @@ class DatabaseHelper {
     };
   }
 
-  /// Get selected workers (for cart)
   Future<List<WorkerModel>> getSelectedWorkers() async {
     final db = await database;
     final result = await db.query(
@@ -327,7 +341,6 @@ class DatabaseHelper {
     return result.map((map) => WorkerModel.fromMap(map)).toList();
   }
 
-  /// Clear all selected workers
   Future<int> clearAllSelections() async {
     final db = await database;
     return await db.update(
@@ -336,7 +349,6 @@ class DatabaseHelper {
     );
   }
 
-  /// Close database connection
   Future<void> close() async {
     final db = await database;
     await db.close();
