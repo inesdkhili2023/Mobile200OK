@@ -67,7 +67,7 @@ class FeedbackUpdatedScreen extends StatelessWidget {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
+                      foregroundColor: const Color.fromARGB(255, 242, 236, 236),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),

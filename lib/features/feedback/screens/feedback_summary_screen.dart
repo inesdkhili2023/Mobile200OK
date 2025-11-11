@@ -151,6 +151,7 @@ class _FeedbackSummaryScreenState extends State<FeedbackSummaryScreen> {
                                       },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.deepPurple,
+                                         foregroundColor: Colors.white,   
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(8),
                                         ),
@@ -163,6 +164,7 @@ class _FeedbackSummaryScreenState extends State<FeedbackSummaryScreen> {
                                     child: ElevatedButton(
                                       onPressed: () => _delete(f.id!),
                                       style: ElevatedButton.styleFrom(
+                                          foregroundColor: Colors.white,  
                                         backgroundColor: Colors.deepPurple,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(8),

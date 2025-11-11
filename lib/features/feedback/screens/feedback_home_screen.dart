@@ -68,9 +68,15 @@ class _FeedbackHomeScreenState extends State<FeedbackHomeScreen> {
       return;
     }
 
-    // 🔴 Vérification de modération locale
+    // Validation du commentaire
     final comment = commentCtrl.text.trim();
-    if (comment.isNotEmpty && ModerationService.instance.containsBadWord(comment)) {
+    if (comment.isEmpty) {
+      _snack('Please tap your feedback in the comment field.');
+      return;
+    }
+
+    // 🔴 Vérification de modération locale
+    if (ModerationService.instance.containsBadWord(comment)) {
       _showInsultAlert();
       return;
     }
