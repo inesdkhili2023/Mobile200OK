@@ -1,0 +1,23 @@
+[
+  {
+    "id": "1",
+    "name": "Perceuse électrique",
+    "description": "Perceuse sans fil 18V avec batterie lithium.",
+    "price": 120.0,
+    "image": "https://images.unsplash.com/photo-1581091870639-0e2d4c51bba3"
+  },
+  {
+    "id": "2",
+    "name": "Marteau professionnel",
+    "description": "Marteau en acier inoxydable, manche ergonomique.",
+    "price": 35.0,
+    "image": "https://images.unsplash.com/photo-1603570412249-3317a1d6a166"
+  },
+  {
+    "id": "3",
+    "name": "Tournevis set 12 pièces",
+    "description": "Tournevis aimantés de précision avec étui.",
+    "price": 55.0,
+    "image": "https://images.unsplash.com/photo-1616628188404-0d67bafcb948"
+  }
+]
