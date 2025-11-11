@@ -71,14 +71,18 @@ class WorkerModel {
       price: map['price'],
       isSelected: map['isSelected'] == 1,
       profileImage: map['profileImage'],
-      portfolioImages: map['portfolioImages'] != null && 
-          map['portfolioImages'].toString().isNotEmpty
+      portfolioImages: map['portfolioImages'] != null &&
+              map['portfolioImages'].toString().isNotEmpty
           ? (map['portfolioImages'] as String).split(',')
           : null,
       totalReviews: map['totalReviews'],
       description: map['description'],
-      latitude: map['latitude'] != null ? double.parse(map['latitude'].toString()) : null,
-      longitude: map['longitude'] != null ? double.parse(map['longitude'].toString()) : null,
+      latitude: map['latitude'] != null
+          ? double.parse(map['latitude'].toString())
+          : null,
+      longitude: map['longitude'] != null
+          ? double.parse(map['longitude'].toString())
+          : null,
       address: map['address'],
     );
   }
@@ -124,7 +128,8 @@ class WorkerModel {
   // Méthodes utilitaires
   int get calculatedReviews => (rating * 20).toInt();
 
-  bool get hasPortfolio => portfolioImages != null && portfolioImages!.isNotEmpty;
+  bool get hasPortfolio =>
+      portfolioImages != null && portfolioImages!.isNotEmpty;
 
   bool get hasProfileImage => profileImage != null && profileImage!.isNotEmpty;
 
@@ -199,7 +204,8 @@ class WorkerModel {
         email.contains('@') &&
         workType.isNotEmpty &&
         yearsOfExperience >= 0 &&
-        rating >= 0 && rating <= 5 &&
+        rating >= 0 &&
+        rating <= 5 &&
         price > 0;
   }
 
@@ -212,7 +218,8 @@ class WorkerModel {
   Map<String, dynamic> toJson() => toMap();
 
   // Méthode pour créer depuis JSON
-  factory WorkerModel.fromJson(Map<String, dynamic> json) => WorkerModel.fromMap(json);
+  factory WorkerModel.fromJson(Map<String, dynamic> json) =>
+      WorkerModel.fromMap(json);
 
   // Méthode pour créer un LatLng à partir des coordonnées (pour OpenStreetMap)
   LatLng? get latLng {
@@ -225,21 +232,21 @@ class WorkerModel {
   // Méthode pour calculer la distance entre deux workers (en km)
   double? distanceTo(WorkerModel other) {
     if (!hasLocation || !other.hasLocation) return null;
-    
+
     const double earthRadius = 6371; // Rayon de la Terre en km
-    
+
     double lat1 = latitude! * (pi / 180);
     double lon1 = longitude! * (pi / 180);
     double lat2 = other.latitude! * (pi / 180);
     double lon2 = other.longitude! * (pi / 180);
-    
+
     double dLat = lat2 - lat1;
     double dLon = lon2 - lon1;
-    
+
     double a = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    
+
     return earthRadius * c;
   }
 
@@ -247,7 +254,7 @@ class WorkerModel {
   String? formattedDistanceTo(WorkerModel other) {
     final distance = distanceTo(other);
     if (distance == null) return null;
-    
+
     if (distance < 1) {
       return '${(distance * 1000).toStringAsFixed(0)} m';
     } else {

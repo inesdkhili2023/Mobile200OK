@@ -7,6 +7,7 @@ import 'package:service_app/services/database_helper.dart';
 import 'package:service_app/screens/notifications_screen.dart';
 import 'package:service_app/screens/my_services_screen.dart';
 import 'package:service_app/models/worker_model.dart';
+import '../profile_page.dart'; // 👈 Import de ProfilePage
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -74,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? _buildHomeContent() 
             : _selectedIndex == 2
                 ? _buildTransactionContent()
-                : _buildAccountContent(),
+                : const ProfilePage(), // 👈 Remplacé par ProfilePage
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -113,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
               activeIcon: Icon(Icons.person),
-              label: 'Account',
+              label: 'Profile', // 👈 Label changé de "Account" à "Profile"
             ),
           ],
         ),
@@ -140,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSearchBar(),
               const SizedBox(height: 24),
               _buildCategoriesSection(),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -150,17 +152,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader() {
     return Row(
       children: [
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8E4FF),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(
-            Icons.person,
-            color: Color(0xFF6C5CE7),
-            size: 30,
+        GestureDetector(
+          onTap: () {
+            // 👈 Navigation vers le profil
+            setState(() {
+              _selectedIndex = 3; // 👈 Change l'index pour afficher ProfilePage
+            });
+          },
+          child: Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8E4FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.person,
+              color: Color(0xFF6C5CE7),
+              size: 30,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -517,23 +527,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
+        SizedBox(
+          height: 200, // Fixed height to prevent overflow
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.9, // Adjusted ratio to fit content better
+            ),
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final category = categories[index];
+              return _buildCategoryCard(
+                category['name'],
+                category['icon'],
+                category['color'],
+              );
+            },
           ),
-          itemCount: categories.length,
-          itemBuilder: (context, index) {
-            final category = categories[index];
-            return _buildCategoryCard(
-              category['name'],
-              category['icon'],
-              category['color'],
-            );
-          },
         ),
       ],
     );
@@ -565,19 +579,25 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12), // Reduced padding
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 32),
+              child: Icon(icon, color: color, size: 24), // Smaller icon
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            const SizedBox(height: 6), // Reduced spacing
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12, // Smaller font
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2, // Allow text to wrap
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -610,183 +630,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildAccountContent() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8E4FF),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.person,
-                size: 60,
-                color: Color(0xFF6C5CE7),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              userName,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              SharedPrefsService.getUserPhone() ?? 'No phone number',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 40),
-            
-            // Section Mes Services
-            _buildAccountOption(
-              icon: Icons.work_outline,
-              title: 'Mes Services',
-              subtitle: 'Gérer vos services créés',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const MyServicesScreen(),
-                  ),
-                );
-              },
-            ),
-            
-            _buildAccountOption(
-              icon: Icons.work_outline,
-              title: 'Become a Worker',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const BecomeWorkerScreen(),
-                  ),
-                );
-              },
-            ),
-            _buildAccountOption(
-              icon: Icons.favorite_outline,
-              title: 'Favorites',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Favorites feature coming soon')),
-                );
-              },
-            ),
-            _buildAccountOption(
-              icon: Icons.settings_outlined,
-              title: 'Settings',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Settings feature coming soon')),
-                );
-              },
-            ),
-            _buildAccountOption(
-              icon: Icons.help_outline,
-              title: 'Help & Support',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Help feature coming soon')),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Logout'),
-                    content: const Text('Are you sure you want to logout?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          SharedPrefsService.clearAll();
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Logged out successfully')),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        child: const Text('Logout'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              icon: const Icon(Icons.logout, color: Colors.red),
-              label: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.red),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAccountOption({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF6C5CE7).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: const Color(0xFF6C5CE7)),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        subtitle: subtitle != null 
-            ? Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              )
-            : null,
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: onTap,
       ),
     );
   }

@@ -13,6 +13,8 @@ static SharedPreferences? _prefs;
   static const String _keySelectedWorkers = 'selected_workers';
   static const String _keyRecentSearches = 'recent_searches';
   static const String _keyNotifications = 'notifications';
+  static const String _userRoleKey = 'user_role';
+  static const String _userIdKey = 'user_id';
 
   // User name methods
   static Future<void> setUserName(String name) async {
@@ -31,6 +33,30 @@ static SharedPreferences? _prefs;
   static String? getUserPhone() {
     return _prefs?.getString(_keyUserPhone);
   }
+  // Sauvegarder le rôle de l'utilisateur
+  static Future<void> setUserRole(String role) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userRoleKey, role);
+  }
+
+  // Récupérer le rôle de l'utilisateur
+  static Future<String?> getUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userRoleKey);
+  }
+
+  // Sauvegarder l'ID de l'utilisateur
+  static Future<void> setUserId(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userIdKey, userId);
+  }
+
+  // Récupérer l'ID de l'utilisateur
+  static Future<String?> getUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userIdKey);
+  }
+
 
   // Selected workers methods - NOW SYNCHRONOUS
   static Future<void> addSelectedWorker(int workerId) async {
