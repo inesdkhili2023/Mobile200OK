@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:service_app/features/ui/reservation_screen.dart';
 import 'package:service_app/models/worker_model.dart';
 import 'package:service_app/services/database_helper.dart';
 import 'package:service_app/services/shared_prefs_service.dart';
@@ -612,68 +613,31 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () async {
-                        await SharedPrefsService.addNotification(
-                          'Demande de réservation envoyée pour ${currentWorker.fullName}'
-                        );
-                        
-                        if (mounted) {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              title: const Text('Réserver le Service'),
-                              content: Text(
-                                'Voulez-vous réserver ${currentWorker.fullName} pour ${currentWorker.price} DT/heure?',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Annuler'),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    await SharedPrefsService.addNotification(
-                                      'Réservation confirmée avec ${currentWorker.fullName}!'
-                                    );
-                                    if (mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Réservation confirmée!'),
-                                          backgroundColor: Color(0xFF6C5CE7),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF6C5CE7),
-                                  ),
-                                  child: const Text('Confirmer'),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6C5CE7),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Réserver Maintenant',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReservationScreen(worker: currentWorker), // ✅ passe le worker ici
+      ),
+    );
+  },
+  style: ElevatedButton.styleFrom(
+    backgroundColor: const Color(0xFF6C5CE7),
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+  ),
+  child: const Text(
+    'Réserver Maintenant',
+    style: TextStyle(
+      color: Colors.white,
+      fontSize: 18,
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+),
+
                   ),
                   const SizedBox(height: 20),
                 ],
