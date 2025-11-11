@@ -32,7 +32,8 @@ dependencies:
     sdk: flutter
   sqflite: ^2.3.0
   path: ^1.9.0
-  flutter_local_notifications: ^17.2.3
+  flutter_local_notifications: ^19.5.0 # Version sans l'erreur de compilation
+  http: ^1.1.0
   flutter_sound: ^9.2.13
   path_provider: ^2.0.15
   image_picker: ^1.1.1  # Version la plus récente

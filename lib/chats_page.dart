@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'message_page.dart';
 import 'database_helper.dart';
 import 'notification_service.dart';
+import 'local_notification_service.dart';
+import 'api_notification_service.dart';
 
 class ChatsPage extends StatefulWidget {
   const ChatsPage({super.key});
@@ -18,22 +20,22 @@ class _ChatsPageState extends State<ChatsPage> {
   final List<Map<String, dynamic>> _userContacts = const [
     {
       "id": "1",
-      "name": "James",
+      "name": "Sami Tounsi",
       "avatar": "https://i.pravatar.cc/150?img=1"
     },
     {
       "id": "2",
-      "name": "Will Kenny",
+      "name": "Walid Jaouadi",
       "avatar": "https://i.pravatar.cc/150?img=2"
     },
     {
       "id": "3",
-      "name": "Beth Williams",
+      "name": "Bassem Kchouk",
       "avatar": "https://i.pravatar.cc/150?img=3"
     },
     {
       "id": "4",
-      "name": "Rev Shawn",
+      "name": "Rami Ben Amor",
       "avatar": "https://i.pravatar.cc/150?img=4"
     },
   ];
@@ -540,6 +542,149 @@ class _ChatsPageState extends State<ChatsPage> {
                           },
                         ),
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+void _showNotificationsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.notifications, color: Colors.deepPurple),
+            SizedBox(width: 8),
+            Text('Notifications'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              _buildNotificationItem(
+                icon: Icons.message,
+                title: 'Nouveau message de Bassem',
+                subtitle: 'Salut! Comment ça va?',
+                time: 'Il y a 2 min',
+                isUnread: true,
+              ),
+              _buildNotificationItem(
+                icon: Icons.voice_chat,
+                title: 'Message vocal de Sami',
+                subtitle: 'Message vocal (15s)',
+                time: 'Il y a 5 min',
+                isUnread: true,
+              ),
+              _buildNotificationItem(
+                icon: Icons.photo,
+                title: 'Photo partagée par Walid',
+                subtitle: 'Nouvelle image',
+                time: 'Il y a 10 min',
+                isUnread: false,
+              ),
+              _buildNotificationItem(
+                icon: Icons.message,
+                title: 'Rami a répondu',
+                subtitle: 'D\'accord, merci!',
+                time: 'Il y a 1h',
+                isUnread: false,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+          TextButton(
+            onPressed: () {
+              // Marquer toutes comme lues
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Toutes les notifications marquées comme lues'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('Tout marquer comme lu'),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildNotificationItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String time,
+    required bool isUnread,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isUnread ? Colors.deepPurple.withOpacity(0.1) : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isUnread ? Colors.deepPurple : Colors.transparent,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: isUnread ? Colors.deepPurple : Colors.grey,
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: isUnread ? FontWeight.bold : FontWeight.normal,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                time,
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 10,
+                ),
+              ),
+              if (isUnread) ...[
+                const SizedBox(height: 4),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

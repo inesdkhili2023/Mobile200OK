@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:handicraft/local_notification_service.dart';
 import 'chats_page.dart';
-import 'notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService().init(); // ⚡ Initialisation notifications
+  
+  // Initialisation avec gestion d'erreur
+  try {
+    await LocalNotificationService.initialize();
+    print('✅ Notifications initialisées avec succès');
+  } catch (e) {
+    print('❌ Erreur initialisation notifications: $e');
+  }
+  
   runApp(const MyApp());
 }
 

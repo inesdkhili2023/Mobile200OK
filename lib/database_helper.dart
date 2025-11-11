@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -20,13 +23,12 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3, // 🔥 Version augmentée à 3 pour audioPath
+      version: 4, // 🔥 Version augmentée à 4 pour gifUrl
       onCreate: _createDatabase,
-      onUpgrade: _upgradeDatabase, // 🔥 Ajout de la méthode de migration
+      onUpgrade: _upgradeDatabase,
     );
   }
 
-  // 🔥 EXTRACT: Méthode de création séparée
   Future<void> _createDatabase(Database db, int version) async {
     // Table des conversations
     await db.execute('''
@@ -40,7 +42,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Table des messages
+    // Table des messages - AVEC TOUTES LES COLONNES
     await db.execute('''
       CREATE TABLE IF NOT EXISTS messages(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,47 +51,59 @@ class DatabaseHelper {
         isMe INTEGER,
         timestamp TEXT,
         isRead INTEGER DEFAULT 0,
-        audioPath TEXT
+        audioPath TEXT,
+        gifUrl TEXT
       )
     ''');
-    print('✅ Database created with audioPath column');
+    print('✅ Database created with all columns (audioPath, gifUrl)');
   }
 
-  // 🔥 NOUVELLE MÉTHODE: Migration de la base de données
+  // 🔥 CORRECTION: Migration complète avec gifUrl
   Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
     print('🔄 Migration de la base: v$oldVersion -> v$newVersion');
     
+    // Migration de v1 à v2
     if (oldVersion < 2) {
       try {
-        // Vérifier si la colonne isRead existe déjà
         final columns = await db.rawQuery('PRAGMA table_info(messages)');
         bool hasIsRead = columns.any((col) => col['name'] == 'isRead');
         
         if (!hasIsRead) {
           await db.execute('ALTER TABLE messages ADD COLUMN isRead INTEGER DEFAULT 0');
-          print('✅ Colonne isRead ajoutée à la table messages');
-        } else {
-          print('✅ Colonne isRead existe déjà');
+          print('✅ Colonne isRead ajoutée');
         }
       } catch (e) {
         print('❌ Erreur lors de l\'ajout de isRead: $e');
       }
     }
     
+    // Migration de v2 à v3
     if (oldVersion < 3) {
       try {
-        // Vérifier si la colonne audioPath existe déjà
         final columns = await db.rawQuery('PRAGMA table_info(messages)');
         bool hasAudioPath = columns.any((col) => col['name'] == 'audioPath');
         
         if (!hasAudioPath) {
           await db.execute('ALTER TABLE messages ADD COLUMN audioPath TEXT');
-          print('✅ Colonne audioPath ajoutée à la table messages');
-        } else {
-          print('✅ Colonne audioPath existe déjà');
+          print('✅ Colonne audioPath ajoutée');
         }
       } catch (e) {
         print('❌ Erreur lors de l\'ajout de audioPath: $e');
+      }
+    }
+    
+    // 🔥 NOUVEAU: Migration de v3 à v4
+    if (oldVersion < 4) {
+      try {
+        final columns = await db.rawQuery('PRAGMA table_info(messages)');
+        bool hasGifUrl = columns.any((col) => col['name'] == 'gifUrl');
+        
+        if (!hasGifUrl) {
+          await db.execute('ALTER TABLE messages ADD COLUMN gifUrl TEXT');
+          print('✅ Colonne gifUrl ajoutée');
+        }
+      } catch (e) {
+        print('❌ Erreur lors de l\'ajout de gifUrl: $e');
       }
     }
   }
@@ -99,31 +113,34 @@ class DatabaseHelper {
   // ═══════════════════════════════════════════════════════════
 
   /// Insérer un message
-  Future<void> insertMessage(String userId, String text, bool isMe, {String? audioPath}) async {
+  Future<int> insertMessage(String userId, String text, bool isMe, {String? audioPath, String? gifUrl}) async {
     final db = await database;
     
     try {
-      await db.insert('messages', {
+      final id = await db.insert('messages', {
         'userId': userId,
         'text': text,
         'isMe': isMe ? 1 : 0,
         'timestamp': DateTime.now().toIso8601String(),
         'isRead': isMe ? 1 : 0,
         'audioPath': audioPath,
+        'gifUrl': gifUrl
       });
-      print('✅ Message inséré pour $userId: "$text" (isMe: $isMe, audioPath: $audioPath)');
+      print('✅ Message inséré pour $userId: "$text" (isMe: $isMe, audioPath: $audioPath, gifUrl: $gifUrl)');
+      return id;
     } catch (e) {
       print('❌ Erreur insertion message: $e');
-      // 🔥 FALLBACK: Réessayer sans audioPath si erreur
+      // Fallback sans les colonnes optionnelles
       try {
-        await db.insert('messages', {
+        final id = await db.insert('messages', {
           'userId': userId,
           'text': text,
           'isMe': isMe ? 1 : 0,
           'timestamp': DateTime.now().toIso8601String(),
           'isRead': isMe ? 1 : 0,
         });
-        print('✅ Message inséré (sans audioPath) pour $userId: "$text"');
+        print('✅ Message inséré (sans médias) pour $userId: "$text"');
+        return id;
       } catch (e2) {
         print('❌ Erreur critique insertion message: $e2');
         rethrow;
@@ -141,7 +158,12 @@ class DatabaseHelper {
       orderBy: 'id ASC',
     );
     
-    // Return a new mutable list to avoid read-only errors
+    // DEBUG: Afficher le contenu des messages pour vérifier
+    print('🔍 Récupération de ${result.length} messages pour $userId');
+    for (var msg in result) {
+      print('  - "${msg['text']}" | audioPath: ${msg['audioPath']} | gifUrl: ${msg['gifUrl']}');
+    }
+    
     return List<Map<String, dynamic>>.from(result);
   }
 
@@ -161,26 +183,163 @@ class DatabaseHelper {
   }
 
   /// Supprimer un message spécifique
-  Future<void> deleteMessage(int messageId) async {
-    final db = await database;
-    await db.delete(
-      'messages',
-      where: 'id = ?',
-      whereArgs: [messageId],
-    );
-    print('✅ Message $messageId supprimé');
+ /// Supprimer un message ET son fichier associé
+Future<void> deleteMessage(int messageId) async {
+  final db = await database;
+  
+  // D'abord supprimer les fichiers multimédias
+  await _deleteMediaFiles(messageId);
+  
+  // Ensuite supprimer le message de la base
+  await db.delete(
+    'messages',
+    where: 'id = ?',
+    whereArgs: [messageId],
+  );
+}
+  /// 🆕 Supprimer les fichiers multimédias associés à un message
+Future<void> _deleteMediaFiles(int messageId) async {
+  final db = await database;
+  
+  // Récupérer le message pour obtenir le chemin du fichier
+  final messages = await db.query(
+    'messages',
+    where: 'id = ?',
+    whereArgs: [messageId],
+  );
+  
+  if (messages.isNotEmpty) {
+    final message = messages.first;
+    final String? mediaPath = message['audio_path'] as String?;
+    final String text = message['text'] as String;
+    
+    // Vérifier si c'est un message vocal ou image
+    final bool isVoice = text.contains("🎵");
+    final bool isImage = text.contains("📷");
+    
+    if (mediaPath != null && mediaPath.isNotEmpty) {
+      try {
+        final file = File(mediaPath);
+        if (await file.exists()) {
+          await file.delete();
+          print('🗑️ Fichier ${isVoice ? 'vocal' : 'image'} supprimé: $mediaPath');
+        }
+      } catch (e) {
+        print('❌ Erreur suppression fichier: $e');
+      }
+    }
   }
+}
+/// 🆕 Nettoyer les fichiers multimédias qui ne sont plus référencés dans la base
+Future<void> cleanupOrphanedMediaFiles() async {
+  final db = await database;
+  
+  // Récupérer tous les chemins de fichiers valides dans la base
+  final messages = await db.query('messages', 
+    where: 'audio_path IS NOT NULL AND audio_path != ""');
+  
+  final validPaths = messages
+      .map((msg) => msg['audio_path'] as String)
+      .where((path) => path.isNotEmpty)
+      .toSet();
+  
+  print('🔍 ${validPaths.length} chemins valides trouvés dans la base');
+  
+  // Dossier temporaire où sont stockés les fichiers
+  final directory = await getTemporaryDirectory();
+  final tempDir = Directory(directory.path);
+  
+  if (await tempDir.exists()) {
+    final files = tempDir.listSync();
+    int deletedCount = 0;
+    
+    for (var file in files) {
+      if (file is File) {
+        final filePath = file.path;
+        
+        // Vérifier si c'est un fichier audio ou image de notre app
+        if ((filePath.contains('audio_') || filePath.contains('.jpg') || filePath.contains('.png')) &&
+            !validPaths.contains(filePath)) {
+          try {
+            await file.delete();
+            deletedCount++;
+            print('🧹 Fichier orphelin supprimé: ${file.path}');
+          } catch (e) {
+            print('❌ Erreur suppression fichier orphelin: $e');
+          }
+        }
+      }
+    }
+    
+    print('🧹 Nettoyage terminé: $deletedCount fichiers orphelins supprimés');
+    
+    if (deletedCount == 0) {
+      print('✅ Aucun fichier orphelin trouvé');
+    }
+  }
+}
 
   /// Supprimer les messages d'un utilisateur
-  Future<void> deleteMessages(String userId) async {
-    final db = await database;
-    final count = await db.delete(
-      'messages',
+ /// Supprimer tous les messages d'une conversation ET leurs fichiers
+/// Supprimer tous les messages d'une conversation ET leurs fichiers
+/// Supprimer tous les messages d'une conversation ET leurs fichiers
+Future<void> deleteMessages(String userId) async {  // ✅ userId au lieu de chatId
+  final db = await database;
+  
+  print('🗑️ Suppression des messages pour userId: $userId');
+  
+  // Récupérer tous les messages avec fichiers multimédias
+  final messages = await db.query(
+    'messages',
+    where: 'userId = ? AND audioPath IS NOT NULL',  // ✅ userId et audioPath (pas audio_path)
+    whereArgs: [userId],
+  );
+  
+  print('🔍 ${messages.length} messages avec fichiers trouvés');
+  
+  // Supprimer tous les fichiers multimédias
+  for (var message in messages) {
+    final String? mediaPath = message['audioPath'] as String?;  // ✅ audioPath (pas audio_path)
+    if (mediaPath != null && mediaPath.isNotEmpty) {
+      try {
+        final file = File(mediaPath);
+        if (await file.exists()) {
+          await file.delete();
+          print('🗑️ Fichier média supprimé: $mediaPath');
+        } else {
+          print('⚠️ Fichier déjà supprimé: $mediaPath');
+        }
+      } catch (e) {
+        print('❌ Erreur suppression fichier: $e');
+      }
+    }
+  }
+  
+  // Maintenant supprimer tous les messages
+  final deletedCount = await db.delete(
+    'messages',
+    where: 'userId = ?',  // ✅ userId (pas chat_id)
+    whereArgs: [userId],
+  );
+  
+  print('✅ $deletedCount messages supprimés pour userId: $userId');
+  
+  // Mettre à jour le chat (optionnel - pour garder la conversation mais vide)
+  try {
+    await db.update(
+      'chats',
+      {
+        'message': 'Aucun message',
+        'time': 'Maintenant',
+      },
       where: 'userId = ?',
       whereArgs: [userId],
     );
-    print('✅ $count messages supprimés pour l\'utilisateur $userId');
+    print('✅ Chat mis à jour pour userId: $userId');
+  } catch (e) {
+    print('⚠️ Chat non trouvé ou erreur mise à jour: $e');
   }
+}
 
   /// Supprimer tous les messages
   Future<void> clearAllMessages() async {
@@ -189,7 +348,7 @@ class DatabaseHelper {
     print('🗑️ $count messages supprimés de la base de données');
   }
 
-  /// 🔥 CORRECTION: Compter les messages non lus pour un utilisateur
+  /// Compter les messages non lus pour un utilisateur
   Future<int> getUnreadCount(String userId) async {
     final db = await database;
     final result = await db.rawQuery('''
@@ -199,7 +358,6 @@ class DatabaseHelper {
     ''', [userId]);
     
     final count = Sqflite.firstIntValue(result) ?? 0;
-    print('🔍 Unread count for $userId: $count');
     return count;
   }
 
@@ -228,14 +386,10 @@ class DatabaseHelper {
     return result.map((row) => row['userId'] as String).toList();
   }
 
-  /// 🔥 CORRECTION: Marquer tous les messages comme lus pour un utilisateur
+  /// Marquer tous les messages comme lus pour un utilisateur
   Future<void> markMessagesAsRead(String userId) async {
     final db = await database;
     
-    // D'abord, compter combien de messages seront mis à jour
-    final beforeCount = await getUnreadCount(userId);
-    
-    // Marquer comme lus
     final result = await db.update(
       'messages',
       {'isRead': 1},
@@ -243,11 +397,7 @@ class DatabaseHelper {
       whereArgs: [userId],
     );
     
-    // Vérifier après
-    final afterCount = await getUnreadCount(userId);
-    
     print('✅ $result messages marqués comme lus pour $userId');
-    print('🔍 Avant: $beforeCount non lus, Après: $afterCount non lus');
   }
 
   /// Obtenir le dernier message d'un utilisateur
@@ -333,20 +483,15 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getNotificationData() async {
     final db = await database;
     
-    // Récupérer tous les utilisateurs avec des messages non lus
     final usersWithUnread = await getUsersWithUnreadMessages();
     
     List<Map<String, dynamic>> notificationData = [];
     
     for (String userId in usersWithUnread) {
-      // Récupérer le chat pour avoir le nom
       final chat = await getChat(userId);
       
       if (chat != null) {
-        // Compter les messages non lus
         final unreadCount = await getUnreadCount(userId);
-        
-        // Récupérer les messages non lus
         final unreadMessages = await getUnreadMessages(userId);
         
         notificationData.add({
@@ -396,6 +541,7 @@ class DatabaseHelper {
         print('  Status: $isRead');
         print('  Timestamp: ${msg['timestamp']}');
         print('  Audio Path: ${msg['audioPath'] ?? 'null'}');
+        print('  GIF URL: ${msg['gifUrl'] ?? 'null'}');
       }
     }
     print('═══════════════════════════════════════\n');
@@ -541,6 +687,20 @@ class DatabaseHelper {
     await database;
   }
 
+  /// 🔥 NOUVELLE MÉTHODE: Réinitialiser pour les tests
+  Future<void> resetDatabaseForTesting() async {
+    final db = await database;
+    
+    // Supprimer toutes les tables
+    await db.execute('DROP TABLE IF EXISTS messages');
+    await db.execute('DROP TABLE IF EXISTS chats');
+    
+    // Recréer les tables avec la nouvelle structure
+    await _createDatabase(db, 4);
+    
+    print('✅ Database reset avec la nouvelle structure');
+  }
+
   /// Exporter les données en JSON (utile pour debug)
   Future<Map<String, dynamic>> exportData() async {
     final db = await database;
@@ -566,7 +726,7 @@ class DatabaseHelper {
     }
   }
 
-  /// 🔥 NOUVELLE MÉTHODE: Vérifier la structure de la base de données
+  /// Vérifier la structure de la base de données
   Future<void> checkDatabaseStructure() async {
     final db = await database;
     
@@ -587,5 +747,30 @@ class DatabaseHelper {
     }
     
     print('🔍 END OF STRUCTURE CHECK\n');
+  }
+
+  /// 🔥 NOUVELLE MÉTHODE: Vérifier si un message est un média
+  bool isMediaMessage(Map<String, dynamic> message) {
+    final text = message['text'] as String? ?? '';
+    final audioPath = message['audioPath'] as String?;
+    final gifUrl = message['gifUrl'] as String?;
+    
+    return text.contains("📷") || 
+           text.contains("🎵") || 
+           text.contains("🎆") ||
+           audioPath != null ||
+           gifUrl != null;
+  }
+
+  /// 🔥 NOUVELLE MÉTHODE: Obtenir le type de média d'un message
+  String getMessageType(Map<String, dynamic> message) {
+    final text = message['text'] as String? ?? '';
+    final audioPath = message['audioPath'] as String?;
+    final gifUrl = message['gifUrl'] as String?;
+    
+    if (text.contains("🎆") || gifUrl != null) return 'gif';
+    if (text.contains("📷") || (audioPath != null && text.contains("📷"))) return 'image';
+    if (text.contains("🎵") || audioPath != null) return 'voice';
+    return 'text';
   }
 }
