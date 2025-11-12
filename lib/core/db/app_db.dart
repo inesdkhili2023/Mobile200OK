@@ -18,7 +18,9 @@ CREATE TABLE worker_availability(
   worker_id TEXT,
   date TEXT,
   slots TEXT,
-  is_holiday INTEGER
+  is_holiday INTEGER,
+  latitude REAL,
+  longitude REAL
 );
 ''');
         await db.execute('''

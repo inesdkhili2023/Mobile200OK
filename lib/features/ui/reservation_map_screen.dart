@@ -25,8 +25,14 @@ class ReservationMapScreen extends StatelessWidget {
       );
     }
 
+    // 🟢 Position du client
     final clientPos = LatLng(clientLat, clientLng);
-    final workerPos = _workerPositionForCity(booking.city, clientLat, clientLng);
+
+    // 🟢 Récupère la position du worker à partir du workerId
+    // (dans ton cas, worker_1)
+    final workerLat = 36.8065; // Tunis (exemple fixe)
+    final workerLng = 10.1815;
+    final workerPos = LatLng(workerLat, workerLng);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Localisation réservation')),
@@ -36,7 +42,7 @@ class ReservationMapScreen extends StatelessWidget {
           initialZoom: 13,
         ),
         children: [
-          // 🔹 Fond de carte OpenStreetMap
+          // 🔹 Fond OpenStreetMap
           TileLayer(
             urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
             subdomains: const ['a', 'b', 'c'],
@@ -48,39 +54,19 @@ class ReservationMapScreen extends StatelessWidget {
               point: clientPos,
               width: 60,
               height: 60,
-              child: const Icon(Icons.person_pin_circle, color: Colors.red, size: 40),
+              child: const Icon(Icons.person_pin_circle,
+                  color: Colors.red, size: 40),
             ),
             Marker(
               point: workerPos,
               width: 60,
               height: 60,
-              child: const Icon(Icons.home_repair_service, color: Colors.blue, size: 40),
+              child: const Icon(Icons.home_repair_service,
+                  color: Colors.blue, size: 40),
             ),
           ]),
         ],
       ),
     );
-  }
-
-  LatLng _workerPositionForCity(String city, double clientLat, double clientLng) {
-    switch (city.toLowerCase()) {
-      case 'tunis':
-        return const LatLng(36.8065, 10.1815);
-      case 'ariana':
-        return const LatLng(36.8688, 10.1647);
-      case 'lac':
-        return const LatLng(36.8340, 10.2430);
-      case 'marsa':
-        return const LatLng(36.8780, 10.3247);
-      case 'sidi bou said':
-        return const LatLng(36.8700, 10.3419);
-      case 'bizerte':
-        return const LatLng(37.2746, 9.8739);
-      case 'gafsa':
-        return const LatLng(34.4250, 8.7842);
-      default:
-        // Si ville inconnue → worker proche du client
-        return LatLng(clientLat + 0.002, clientLng + 0.002);
-    }
   }
 }

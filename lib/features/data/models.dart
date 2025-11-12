@@ -4,6 +4,8 @@ class WorkerAvailability {
   final DateTime date;          // jour
   final List<String> slots;     // ["09:00-11:00","11:00-13:00"]
   final bool isHoliday;
+   final double? latitude;       
+  final double? longitude;
 
   WorkerAvailability({
     this.id,
@@ -11,6 +13,8 @@ class WorkerAvailability {
     required this.date,
     required this.slots,
     this.isHoliday = false,
+    this.latitude,
+    this.longitude,
   });
 
   Map<String, Object?> toRow() => {
@@ -18,7 +22,9 @@ class WorkerAvailability {
     'worker_id': workerId,
     'date': date.toIso8601String(),
     'slots': slots.join(','),
-    'is_holiday': isHoliday ? 1 : 0
+    'is_holiday': isHoliday ? 1 : 0,
+     'latitude': latitude,
+    'longitude': longitude,
   };
 
   static WorkerAvailability fromRow(Map<String, Object?> r) => WorkerAvailability(
@@ -27,6 +33,8 @@ class WorkerAvailability {
     date: DateTime.parse(r['date'] as String),
     slots: (r['slots'] as String).split(',').where((e) => e.isNotEmpty).toList(),
     isHoliday: (r['is_holiday'] as int) == 1,
+    latitude: r['latitude'] as double?,
+    longitude: r['longitude'] as double?,
   );
 }
 
